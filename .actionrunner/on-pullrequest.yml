@@ -1,0 +1,35 @@
+version: "2"
+name: "ActionRunner-ipc Distributed PR Pipeline: Formatting, Clippy, Security, Coverage & Native K3"
+
+stages:
+  - id: fmt-check
+    name: "Verify Rust Formatting"
+    tags: ["fmt"]
+    threads: 2
+    run: "cargo fmt --check"
+
+  - id: clippy-check
+    name: "Verify Rust Linter & Clippy Rules"
+    tags: ["clippy"]
+    threads: 4
+    run: "cargo clippy --all-targets -- -D warnings"
+
+  - id: audit-check
+    name: "Verify Security Advisories"
+    tags: ["audit"]
+    threads: 2
+    run: "cargo audit"
+
+  - id: coverage-test
+    name: "Evaluate Test Suite & Line Code Coverage (cargo llvm-cov)"
+    tags: ["test"]
+    depends_on: ["fmt-check", "clippy-check"]
+    threads: 4
+    run: "cargo llvm-cov --summary-only"
+
+  - id: native-k3
+    name: "Validate Native K3 Verification & Tests"
+    tags: ["k3"]
+    depends_on: ["fmt-check", "clippy-check"]
+    threads: 2
+    run: "cargo test"
