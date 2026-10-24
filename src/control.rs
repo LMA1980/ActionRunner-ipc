@@ -2,10 +2,10 @@ use crate::error::IpcError;
 use fory::{Fory, ForyStruct};
 
 pub const FORY_ID_REGISTRATION: u32 = 1;
-pub const FORY_ID_HEARTBEAT: u32    = 2;
-pub const FORY_ID_DISPATCH: u32     = 3;
-pub const FORY_ID_COMPLETION: u32   = 4;
-pub const FORY_ID_CANCEL: u32       = 5;
+pub const FORY_ID_HEARTBEAT: u32 = 2;
+pub const FORY_ID_DISPATCH: u32 = 3;
+pub const FORY_ID_COMPLETION: u32 = 4;
+pub const FORY_ID_CANCEL: u32 = 5;
 
 #[derive(ForyStruct, Debug, PartialEq, Clone)]
 pub struct WorkerRegistration {

@@ -7,15 +7,15 @@ pub const CURRENT_VERSION: u16 = 1;
 
 // Message Types
 pub const MSG_TYPE_WORKER_REGISTRATION: u16 = 0x01;
-pub const MSG_TYPE_WORKER_HEARTBEAT: u16    = 0x02;
-pub const MSG_TYPE_STAGE_DISPATCH: u16      = 0x03;
-pub const MSG_TYPE_STAGE_COMPLETION: u16    = 0x04;
-pub const MSG_TYPE_STAGE_CANCEL: u16        = 0x05;
-pub const MSG_TYPE_ARROW_LOG: u16           = 0x10;
-pub const MSG_TYPE_ARROW_METRIC: u16        = 0x11;
+pub const MSG_TYPE_WORKER_HEARTBEAT: u16 = 0x02;
+pub const MSG_TYPE_STAGE_DISPATCH: u16 = 0x03;
+pub const MSG_TYPE_STAGE_COMPLETION: u16 = 0x04;
+pub const MSG_TYPE_STAGE_CANCEL: u16 = 0x05;
+pub const MSG_TYPE_ARROW_LOG: u16 = 0x10;
+pub const MSG_TYPE_ARROW_METRIC: u16 = 0x11;
 
 // Flags
-pub const FLAG_COMPRESSED: u32    = 0x01;
+pub const FLAG_COMPRESSED: u32 = 0x01;
 pub const FLAG_END_OF_STREAM: u32 = 0x02;
 
 pub const HEADER_SIZE: usize = std::mem::size_of::<IpcHeader>();
