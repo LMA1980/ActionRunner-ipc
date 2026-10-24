@@ -1,0 +1,22 @@
+[package]
+name = "action-runner-ipc"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance zero-copy IPC protocol library for ActionRunner using zerocopy, Apache Fory, and Apache Arrow"
+license = "AGPL-3.0-only"
+repository = "https://github.com/LMA1980/ActionRunner-ipc"
+
+[dependencies]
+zerocopy = { version = "0.8", features = ["derive"] }
+fory = "1.7"
+arrow = { version = "54", default-features = false, features = ["ipc"] }
+tokio = { version = "1", features = ["io-util", "sync", "macros", "rt"] }
+bytes = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
