@@ -1,4 +1,3 @@
-use crate::error::IpcError;
 use arrow::array::{
     Array, ArrayRef, Float64Array, Int8Array, RecordBatch, StringArray, TimestampMicrosecondArray,
     UInt32Array,
@@ -8,9 +7,12 @@ use arrow::ipc::reader::StreamReader;
 use arrow::ipc::writer::StreamWriter;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+use crate::IpcError;
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct LogEntry {
     pub timestamp_us: i64,
+    pub job_id: String,
     pub stage_id: String,
     pub node_id: String,
     pub stream: i8, // 1 = stdout, 2 = stderr
@@ -21,6 +23,7 @@ pub struct LogEntry {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MetricEntry {
     pub timestamp_us: i64,
+    pub job_id: String,
     pub stage_id: String,
     pub submodule: String,
     pub tests_passed: u32,
@@ -38,6 +41,7 @@ pub fn log_schema() -> Arc<Schema> {
             DataType::Timestamp(TimeUnit::Microsecond, None),
             false,
         ),
+        Field::new("job_id", DataType::Utf8, false),
         Field::new("stage_id", DataType::Utf8, false),
         Field::new("node_id", DataType::Utf8, false),
         Field::new("stream", DataType::Int8, false),
@@ -53,6 +57,7 @@ pub fn metric_schema() -> Arc<Schema> {
             DataType::Timestamp(TimeUnit::Microsecond, None),
             false,
         ),
+        Field::new("job_id", DataType::Utf8, false),
         Field::new("stage_id", DataType::Utf8, false),
         Field::new("submodule", DataType::Utf8, false),
         Field::new("tests_passed", DataType::UInt32, false),
@@ -68,6 +73,7 @@ pub fn log_entries_to_record_batch(entries: &[LogEntry]) -> Result<RecordBatch, 
     let schema = log_schema();
 
     let mut ts_builder = Vec::with_capacity(entries.len());
+    let mut job_builder = Vec::with_capacity(entries.len());
     let mut stage_builder = Vec::with_capacity(entries.len());
     let mut node_builder = Vec::with_capacity(entries.len());
     let mut stream_builder = Vec::with_capacity(entries.len());
@@ -76,6 +82,7 @@ pub fn log_entries_to_record_batch(entries: &[LogEntry]) -> Result<RecordBatch, 
 
     for entry in entries {
         ts_builder.push(entry.timestamp_us);
+        job_builder.push(entry.job_id.as_str());
         stage_builder.push(entry.stage_id.as_str());
         node_builder.push(entry.node_id.as_str());
         stream_builder.push(entry.stream);
@@ -84,6 +91,7 @@ pub fn log_entries_to_record_batch(entries: &[LogEntry]) -> Result<RecordBatch, 
     }
 
     let ts_array: ArrayRef = Arc::new(TimestampMicrosecondArray::from(ts_builder));
+    let job_array: ArrayRef = Arc::new(StringArray::from(job_builder));
     let stage_array: ArrayRef = Arc::new(StringArray::from(stage_builder));
     let node_array: ArrayRef = Arc::new(StringArray::from(node_builder));
     let stream_array: ArrayRef = Arc::new(Int8Array::from(stream_builder));
@@ -94,6 +102,7 @@ pub fn log_entries_to_record_batch(entries: &[LogEntry]) -> Result<RecordBatch, 
         schema,
         vec![
             ts_array,
+            job_array,
             stage_array,
             node_array,
             stream_array,
@@ -115,8 +124,17 @@ pub fn record_batch_to_log_entries(batch: &RecordBatch) -> Result<Vec<LogEntry>,
                 "Invalid timestamp column".into(),
             ))
         })?;
-    let stage_col = batch
+    let job_col = batch
         .column(1)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .ok_or_else(|| {
+            IpcError::Arrow(arrow::error::ArrowError::ParseError(
+                "Invalid job_id column".into(),
+            ))
+        })?;
+    let stage_col = batch
+        .column(2)
         .as_any()
         .downcast_ref::<StringArray>()
         .ok_or_else(|| {
@@ -125,7 +143,7 @@ pub fn record_batch_to_log_entries(batch: &RecordBatch) -> Result<Vec<LogEntry>,
             ))
         })?;
     let node_col = batch
-        .column(2)
+        .column(3)
         .as_any()
         .downcast_ref::<StringArray>()
         .ok_or_else(|| {
@@ -134,7 +152,7 @@ pub fn record_batch_to_log_entries(batch: &RecordBatch) -> Result<Vec<LogEntry>,
             ))
         })?;
     let stream_col = batch
-        .column(3)
+        .column(4)
         .as_any()
         .downcast_ref::<Int8Array>()
         .ok_or_else(|| {
@@ -143,7 +161,7 @@ pub fn record_batch_to_log_entries(batch: &RecordBatch) -> Result<Vec<LogEntry>,
             ))
         })?;
     let line_col = batch
-        .column(4)
+        .column(5)
         .as_any()
         .downcast_ref::<UInt32Array>()
         .ok_or_else(|| {
@@ -152,7 +170,7 @@ pub fn record_batch_to_log_entries(batch: &RecordBatch) -> Result<Vec<LogEntry>,
             ))
         })?;
     let content_col = batch
-        .column(5)
+        .column(6)
         .as_any()
         .downcast_ref::<StringArray>()
         .ok_or_else(|| {
@@ -167,6 +185,7 @@ pub fn record_batch_to_log_entries(batch: &RecordBatch) -> Result<Vec<LogEntry>,
     for i in 0..num_rows {
         entries.push(LogEntry {
             timestamp_us: ts_col.value(i),
+            job_id: job_col.value(i).to_string(),
             stage_id: stage_col.value(i).to_string(),
             node_id: node_col.value(i).to_string(),
             stream: stream_col.value(i),
@@ -205,6 +224,7 @@ pub fn metric_entries_to_record_batch(entries: &[MetricEntry]) -> Result<RecordB
     let schema = metric_schema();
 
     let mut ts_builder = Vec::with_capacity(entries.len());
+    let mut job_builder = Vec::with_capacity(entries.len());
     let mut stage_builder = Vec::with_capacity(entries.len());
     let mut sub_builder = Vec::with_capacity(entries.len());
     let mut pass_builder = Vec::with_capacity(entries.len());
@@ -216,6 +236,7 @@ pub fn metric_entries_to_record_batch(entries: &[MetricEntry]) -> Result<RecordB
 
     for entry in entries {
         ts_builder.push(entry.timestamp_us);
+        job_builder.push(entry.job_id.as_str());
         stage_builder.push(entry.stage_id.as_str());
         sub_builder.push(entry.submodule.as_str());
         pass_builder.push(entry.tests_passed);
@@ -227,6 +248,7 @@ pub fn metric_entries_to_record_batch(entries: &[MetricEntry]) -> Result<RecordB
     }
 
     let ts_array: ArrayRef = Arc::new(TimestampMicrosecondArray::from(ts_builder));
+    let job_array: ArrayRef = Arc::new(StringArray::from(job_builder));
     let stage_array: ArrayRef = Arc::new(StringArray::from(stage_builder));
     let sub_array: ArrayRef = Arc::new(StringArray::from(sub_builder));
     let pass_array: ArrayRef = Arc::new(UInt32Array::from(pass_builder));
@@ -240,6 +262,7 @@ pub fn metric_entries_to_record_batch(entries: &[MetricEntry]) -> Result<RecordB
         schema,
         vec![
             ts_array,
+            job_array,
             stage_array,
             sub_array,
             pass_array,
@@ -264,8 +287,17 @@ pub fn record_batch_to_metric_entries(batch: &RecordBatch) -> Result<Vec<MetricE
                 "Invalid timestamp column".into(),
             ))
         })?;
-    let stage_col = batch
+    let job_col = batch
         .column(1)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .ok_or_else(|| {
+            IpcError::Arrow(arrow::error::ArrowError::ParseError(
+                "Invalid job_id column".into(),
+            ))
+        })?;
+    let stage_col = batch
+        .column(2)
         .as_any()
         .downcast_ref::<StringArray>()
         .ok_or_else(|| {
@@ -274,7 +306,7 @@ pub fn record_batch_to_metric_entries(batch: &RecordBatch) -> Result<Vec<MetricE
             ))
         })?;
     let sub_col = batch
-        .column(2)
+        .column(3)
         .as_any()
         .downcast_ref::<StringArray>()
         .ok_or_else(|| {
@@ -283,7 +315,7 @@ pub fn record_batch_to_metric_entries(batch: &RecordBatch) -> Result<Vec<MetricE
             ))
         })?;
     let pass_col = batch
-        .column(3)
+        .column(4)
         .as_any()
         .downcast_ref::<UInt32Array>()
         .ok_or_else(|| {
@@ -292,7 +324,7 @@ pub fn record_batch_to_metric_entries(batch: &RecordBatch) -> Result<Vec<MetricE
             ))
         })?;
     let total_col = batch
-        .column(4)
+        .column(5)
         .as_any()
         .downcast_ref::<UInt32Array>()
         .ok_or_else(|| {
@@ -301,7 +333,7 @@ pub fn record_batch_to_metric_entries(batch: &RecordBatch) -> Result<Vec<MetricE
             ))
         })?;
     let cov_col = batch
-        .column(5)
+        .column(6)
         .as_any()
         .downcast_ref::<Float64Array>()
         .ok_or_else(|| {
@@ -310,7 +342,7 @@ pub fn record_batch_to_metric_entries(batch: &RecordBatch) -> Result<Vec<MetricE
             ))
         })?;
     let clippy_col = batch
-        .column(6)
+        .column(7)
         .as_any()
         .downcast_ref::<UInt32Array>()
         .ok_or_else(|| {
@@ -319,7 +351,7 @@ pub fn record_batch_to_metric_entries(batch: &RecordBatch) -> Result<Vec<MetricE
             ))
         })?;
     let adv_col = batch
-        .column(7)
+        .column(8)
         .as_any()
         .downcast_ref::<UInt32Array>()
         .ok_or_else(|| {
@@ -328,7 +360,7 @@ pub fn record_batch_to_metric_entries(batch: &RecordBatch) -> Result<Vec<MetricE
             ))
         })?;
     let bench_col = batch
-        .column(8)
+        .column(9)
         .as_any()
         .downcast_ref::<Float64Array>()
         .ok_or_else(|| {
@@ -341,24 +373,28 @@ pub fn record_batch_to_metric_entries(batch: &RecordBatch) -> Result<Vec<MetricE
     let mut entries = Vec::with_capacity(num_rows);
 
     for i in 0..num_rows {
+        let cov = if cov_col.is_null(i) {
+            None
+        } else {
+            Some(cov_col.value(i))
+        };
+        let bench = if bench_col.is_null(i) {
+            None
+        } else {
+            Some(bench_col.value(i))
+        };
+
         entries.push(MetricEntry {
             timestamp_us: ts_col.value(i),
+            job_id: job_col.value(i).to_string(),
             stage_id: stage_col.value(i).to_string(),
             submodule: sub_col.value(i).to_string(),
             tests_passed: pass_col.value(i),
             tests_total: total_col.value(i),
-            coverage_pct: if cov_col.is_null(i) {
-                None
-            } else {
-                Some(cov_col.value(i))
-            },
+            coverage_pct: cov,
             clippy_warnings: clippy_col.value(i),
             advisories_count: adv_col.value(i),
-            bench_ns_per_iter: if bench_col.is_null(i) {
-                None
-            } else {
-                Some(bench_col.value(i))
-            },
+            bench_ns_per_iter: bench,
         });
     }
 

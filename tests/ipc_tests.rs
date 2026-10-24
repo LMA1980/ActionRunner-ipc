@@ -15,7 +15,7 @@ fn test_zerocopy_header_parsing() {
     assert_eq!(bytes.len(), 24);
 
     let (parsed, rest) = IpcHeader::parse(bytes).expect("Valid header");
-    assert_eq!(parsed, &header);
+    assert_eq!(parsed, header);
     assert!(rest.is_empty());
 }
 
@@ -158,6 +158,7 @@ async fn test_arrow_log_batch_streaming_over_duplex() {
     let log_entries = vec![
         LogEntry {
             timestamp_us: 1730000000000000,
+            job_id: "job-101".to_string(),
             stage_id: "clippy-check".to_string(),
             node_id: "rubicon".to_string(),
             stream: 1,
@@ -166,6 +167,7 @@ async fn test_arrow_log_batch_streaming_over_duplex() {
         },
         LogEntry {
             timestamp_us: 1730000001000000,
+            job_id: "job-101".to_string(),
             stage_id: "clippy-check".to_string(),
             node_id: "rubicon".to_string(),
             stream: 1,
@@ -174,6 +176,7 @@ async fn test_arrow_log_batch_streaming_over_duplex() {
         },
         LogEntry {
             timestamp_us: 1730000002000000,
+            job_id: "job-101".to_string(),
             stage_id: "clippy-check".to_string(),
             node_id: "rubicon".to_string(),
             stream: 2,
@@ -203,6 +206,7 @@ async fn test_arrow_metrics_streaming_over_duplex() {
     let metric_entries = vec![
         MetricEntry {
             timestamp_us: 1730000000000000,
+            job_id: "job-101".to_string(),
             stage_id: "native-k3-verification".to_string(),
             submodule: "k3-core".to_string(),
             tests_passed: 48,
@@ -214,6 +218,7 @@ async fn test_arrow_metrics_streaming_over_duplex() {
         },
         MetricEntry {
             timestamp_us: 1730000001000000,
+            job_id: "job-101".to_string(),
             stage_id: "native-k3-verification".to_string(),
             submodule: "k3-engine".to_string(),
             tests_passed: 112,
