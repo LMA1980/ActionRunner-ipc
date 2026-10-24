@@ -43,7 +43,7 @@ impl IpcHeader {
         }
     }
 
-    pub fn parse(buf: &[u8]) -> Result<(&Self, &[u8]), IpcError> {
+    pub fn parse(buf: &[u8]) -> Result<(Self, &[u8]), IpcError> {
         if buf.len() < HEADER_SIZE {
             return Err(IpcError::BufferTooSmall {
                 expected: HEADER_SIZE,
@@ -51,7 +51,7 @@ impl IpcHeader {
             });
         }
 
-        let (hdr, rest) = Self::ref_from_prefix(buf)
+        let (hdr, rest) = Self::read_from_prefix(buf)
             .map_err(|e| IpcError::MalformedHeader(format!("{:?}", e)))?;
 
         if hdr.magic != MAGIC {
@@ -69,15 +69,14 @@ pub async fn read_frame<R: AsyncRead + Unpin>(
     reader.read_exact(&mut header_buf).await?;
 
     let (header, _) = IpcHeader::parse(&header_buf)?;
-    let header_copy = *header;
 
-    let payload_len = header_copy.payload_len as usize;
+    let payload_len = header.payload_len as usize;
     let mut payload = vec![0u8; payload_len];
     if payload_len > 0 {
         reader.read_exact(&mut payload).await?;
     }
 
-    Ok((header_copy, payload))
+    Ok((header, payload))
 }
 
 pub async fn write_frame<W: AsyncWrite + Unpin>(
