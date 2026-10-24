@@ -212,7 +212,7 @@ pub fn encode_log_batch(entries: &[LogEntry]) -> Result<Vec<u8>, IpcError> {
 pub fn decode_log_batch(bytes: &[u8]) -> Result<Vec<LogEntry>, IpcError> {
     let mut reader = StreamReader::try_new(bytes, None)?;
     let mut all_entries = Vec::new();
-    while let Some(batch_res) = reader.next() {
+    for batch_res in &mut reader {
         let batch = batch_res?;
         let entries = record_batch_to_log_entries(&batch)?;
         all_entries.extend(entries);
@@ -416,7 +416,7 @@ pub fn encode_metric_batch(entries: &[MetricEntry]) -> Result<Vec<u8>, IpcError>
 pub fn decode_metric_batch(bytes: &[u8]) -> Result<Vec<MetricEntry>, IpcError> {
     let mut reader = StreamReader::try_new(bytes, None)?;
     let mut all_entries = Vec::new();
-    while let Some(batch_res) = reader.next() {
+    for batch_res in &mut reader {
         let batch = batch_res?;
         let entries = record_batch_to_metric_entries(&batch)?;
         all_entries.extend(entries);
