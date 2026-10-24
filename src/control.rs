@@ -7,6 +7,7 @@ pub const FORY_ID_DISPATCH: u32 = 3;
 pub const FORY_ID_COMPLETION: u32 = 4;
 pub const FORY_ID_CANCEL: u32 = 5;
 pub const FORY_ID_WORKER_SHUTDOWN: u32 = 6;
+pub const FORY_ID_STAGE_STARTED: u32 = 7;
 
 #[derive(ForyStruct, Debug, PartialEq, Clone)]
 pub struct WorkerRegistration {
@@ -67,6 +68,15 @@ pub struct WorkerShutdown {
     pub interrupted_stages: Vec<String>,
 }
 
+#[derive(ForyStruct, Debug, PartialEq, Clone)]
+pub struct StageStarted {
+    pub job_id: String,
+    pub stage_id: String,
+    pub node_id: String,
+    pub pid: u32,
+    pub started_at_epoch_ms: u64,
+}
+
 pub fn create_fory_runtime() -> Result<Fory, IpcError> {
     let mut fory = Fory::builder().xlang(false).build();
     fory.register::<WorkerRegistration>(FORY_ID_REGISTRATION)?;
@@ -75,5 +85,6 @@ pub fn create_fory_runtime() -> Result<Fory, IpcError> {
     fory.register::<StageCompletionReport>(FORY_ID_COMPLETION)?;
     fory.register::<StageCancelTask>(FORY_ID_CANCEL)?;
     fory.register::<WorkerShutdown>(FORY_ID_WORKER_SHUTDOWN)?;
+    fory.register::<StageStarted>(FORY_ID_STAGE_STARTED)?;
     Ok(fory)
 }
