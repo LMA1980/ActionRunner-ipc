@@ -2,8 +2,9 @@ use action_runner_ipc::{
     create_fory_runtime, decode_log_batch, decode_metric_batch, encode_log_batch,
     encode_metric_batch, read_frame, write_frame, IpcHeader, LogEntry, MetricEntry,
     StageCancelTask, StageCompletionReport, StageDispatchTask, WorkerHeartbeat, WorkerRegistration,
-    MSG_TYPE_ARROW_LOG, MSG_TYPE_ARROW_METRIC, MSG_TYPE_STAGE_CANCEL, MSG_TYPE_STAGE_COMPLETION,
-    MSG_TYPE_STAGE_DISPATCH, MSG_TYPE_WORKER_HEARTBEAT, MSG_TYPE_WORKER_REGISTRATION,
+    WorkerShutdown, MSG_TYPE_ARROW_LOG, MSG_TYPE_ARROW_METRIC, MSG_TYPE_STAGE_CANCEL,
+    MSG_TYPE_STAGE_COMPLETION, MSG_TYPE_STAGE_DISPATCH, MSG_TYPE_WORKER_HEARTBEAT,
+    MSG_TYPE_WORKER_REGISTRATION, MSG_TYPE_WORKER_SHUTDOWN,
 };
 use tokio::io::duplex;
 
@@ -234,4 +235,36 @@ async fn test_arrow_metrics_streaming_over_duplex() {
 
     let decoded_entries = decode_metric_batch(&recv_payload).expect("Arrow metric decoding");
     assert_eq!(metric_entries, decoded_entries);
+}
+
+#[tokio::test]
+async fn test_worker_shutdown_transmission_over_duplex() {
+    let (mut client, mut server) = duplex(4096);
+    let fory = create_fory_runtime().expect("Fory runtime");
+
+    let shutdown = WorkerShutdown {
+        node_id: "pey-wail-deu".to_string(),
+        reason: "Daemon service restarting (SIGTERM)".to_string(),
+        interrupted_stages: vec!["miri-check".to_string(), "bench-run".to_string()],
+    };
+
+    let serialized_payload = fory.serialize(&shutdown).expect("Serialization");
+    let header = IpcHeader::new(
+        MSG_TYPE_WORKER_SHUTDOWN,
+        serialized_payload.len() as u32,
+        0,
+        99,
+    );
+
+    write_frame(&mut client, &header, &serialized_payload)
+        .await
+        .expect("write frame");
+
+    let (received_hdr, received_payload) = read_frame(&mut server).await.expect("read frame");
+    assert_eq!(received_hdr, header);
+
+    let decoded_shutdown: WorkerShutdown = fory
+        .deserialize(&received_payload)
+        .expect("Deserialization");
+    assert_eq!(decoded_shutdown, shutdown);
 }
