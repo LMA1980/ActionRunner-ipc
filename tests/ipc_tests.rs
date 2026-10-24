@@ -1,10 +1,9 @@
 use action_runner_ipc::{
     create_fory_runtime, decode_log_batch, decode_metric_batch, encode_log_batch,
     encode_metric_batch, read_frame, write_frame, IpcHeader, LogEntry, MetricEntry,
-    StageCancelTask, StageCompletionReport, StageDispatchTask, WorkerHeartbeat,
-    WorkerRegistration, MSG_TYPE_ARROW_LOG, MSG_TYPE_ARROW_METRIC, MSG_TYPE_STAGE_CANCEL,
-    MSG_TYPE_STAGE_COMPLETION, MSG_TYPE_STAGE_DISPATCH, MSG_TYPE_WORKER_HEARTBEAT,
-    MSG_TYPE_WORKER_REGISTRATION,
+    StageCancelTask, StageCompletionReport, StageDispatchTask, WorkerHeartbeat, WorkerRegistration,
+    MSG_TYPE_ARROW_LOG, MSG_TYPE_ARROW_METRIC, MSG_TYPE_STAGE_CANCEL, MSG_TYPE_STAGE_COMPLETION,
+    MSG_TYPE_STAGE_DISPATCH, MSG_TYPE_WORKER_HEARTBEAT, MSG_TYPE_WORKER_REGISTRATION,
 };
 use tokio::io::duplex;
 
@@ -98,20 +97,14 @@ async fn test_fory_control_transmission_over_duplex() {
         error_message: None,
     };
     let report_bytes = fory.serialize(&report).expect("report serialize");
-    let report_hdr = IpcHeader::new(
-        MSG_TYPE_STAGE_COMPLETION,
-        report_bytes.len() as u32,
-        0,
-        3,
-    );
+    let report_hdr = IpcHeader::new(MSG_TYPE_STAGE_COMPLETION, report_bytes.len() as u32, 0, 3);
     write_frame(&mut client, &report_hdr, &report_bytes)
         .await
         .expect("write report");
     let (recv_report_hdr, recv_report_bytes) = read_frame(&mut server).await.expect("read report");
     assert_eq!(recv_report_hdr, report_hdr);
-    let decoded_report: StageCompletionReport = fory
-        .deserialize(&recv_report_bytes)
-        .expect("decode report");
+    let decoded_report: StageCompletionReport =
+        fory.deserialize(&recv_report_bytes).expect("decode report");
     assert_eq!(report, decoded_report);
 
     // 4. WorkerHeartbeat
@@ -145,9 +138,8 @@ async fn test_fory_control_transmission_over_duplex() {
         .expect("write cancel");
     let (recv_cancel_hdr, recv_cancel_bytes) = read_frame(&mut server).await.expect("read cancel");
     assert_eq!(recv_cancel_hdr, cancel_hdr);
-    let decoded_cancel: StageCancelTask = fory
-        .deserialize(&recv_cancel_bytes)
-        .expect("decode cancel");
+    let decoded_cancel: StageCancelTask =
+        fory.deserialize(&recv_cancel_bytes).expect("decode cancel");
     assert_eq!(cancel, decoded_cancel);
 }
 
