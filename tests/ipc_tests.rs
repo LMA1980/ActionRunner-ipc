@@ -268,3 +268,37 @@ async fn test_worker_shutdown_transmission_over_duplex() {
         .expect("Deserialization");
     assert_eq!(decoded_shutdown, shutdown);
 }
+
+#[tokio::test]
+async fn test_stage_started_transmission_over_duplex() {
+    let (mut client, mut server) = duplex(4096);
+    let fory = create_fory_runtime().expect("Fory runtime");
+
+    let started = action_runner_ipc::StageStarted {
+        job_id: "job-100".to_string(),
+        stage_id: "miri-check".to_string(),
+        node_id: "pey-wail-deu".to_string(),
+        pid: 48210,
+        started_at_epoch_ms: 1729790000000,
+    };
+
+    let serialized_payload = fory.serialize(&started).expect("Serialization");
+    let header = IpcHeader::new(
+        action_runner_ipc::MSG_TYPE_STAGE_STARTED,
+        serialized_payload.len() as u32,
+        0,
+        100,
+    );
+
+    write_frame(&mut client, &header, &serialized_payload)
+        .await
+        .expect("write frame");
+
+    let (received_hdr, received_payload) = read_frame(&mut server).await.expect("read frame");
+    assert_eq!(received_hdr, header);
+
+    let decoded_started: action_runner_ipc::StageStarted = fory
+        .deserialize(&received_payload)
+        .expect("Deserialization");
+    assert_eq!(decoded_started, started);
+}

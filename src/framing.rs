@@ -12,6 +12,7 @@ pub const MSG_TYPE_STAGE_DISPATCH: u16 = 0x03;
 pub const MSG_TYPE_STAGE_COMPLETION: u16 = 0x04;
 pub const MSG_TYPE_STAGE_CANCEL: u16 = 0x05;
 pub const MSG_TYPE_WORKER_SHUTDOWN: u16 = 0x06;
+pub const MSG_TYPE_STAGE_STARTED: u16 = 0x07;
 pub const MSG_TYPE_ARROW_LOG: u16 = 0x10;
 pub const MSG_TYPE_ARROW_METRIC: u16 = 0x11;
 
