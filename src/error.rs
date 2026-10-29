@@ -5,6 +5,12 @@ pub enum IpcError {
     #[error("Invalid magic bytes in IPC header (expected b'K3CI')")]
     InvalidMagic,
 
+    #[error("Unsupported IPC protocol version: expected {expected}, got {actual}")]
+    UnsupportedVersion { expected: u16, actual: u16 },
+
+    #[error("IPC frame payload too large: {actual} bytes exceeds maximum allowed {max} bytes")]
+    FrameTooLarge { max: usize, actual: usize },
+
     #[error("Header length mismatch or malformed packet: {0}")]
     MalformedHeader(String),
 

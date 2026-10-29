@@ -1,12 +1,13 @@
 use action_runner_ipc::{
     create_fory_runtime, decode_log_batch, decode_metric_batch, encode_log_batch,
-    encode_metric_batch, read_frame, write_frame, IpcHeader, LogEntry, MetricEntry,
+    encode_metric_batch, read_frame, write_frame, IpcError, IpcHeader, LogEntry, MetricEntry,
     StageCancelTask, StageCompletionReport, StageDispatchTask, WorkerHeartbeat, WorkerRegistration,
-    WorkerShutdown, MSG_TYPE_ARROW_LOG, MSG_TYPE_ARROW_METRIC, MSG_TYPE_STAGE_CANCEL,
-    MSG_TYPE_STAGE_COMPLETION, MSG_TYPE_STAGE_DISPATCH, MSG_TYPE_WORKER_HEARTBEAT,
-    MSG_TYPE_WORKER_REGISTRATION, MSG_TYPE_WORKER_SHUTDOWN,
+    WorkerShutdown, CURRENT_VERSION, HEADER_SIZE, MAX_FRAME_SIZE, MSG_TYPE_ARROW_LOG,
+    MSG_TYPE_ARROW_METRIC, MSG_TYPE_STAGE_CANCEL, MSG_TYPE_STAGE_COMPLETION,
+    MSG_TYPE_STAGE_DISPATCH, MSG_TYPE_WORKER_HEARTBEAT, MSG_TYPE_WORKER_REGISTRATION,
+    MSG_TYPE_WORKER_SHUTDOWN,
 };
-use tokio::io::duplex;
+use tokio::io::{duplex, AsyncWriteExt};
 
 #[test]
 fn test_zerocopy_header_parsing() {
@@ -77,6 +78,7 @@ async fn test_fory_control_transmission_over_duplex() {
         timeout_seconds: 360,
         threads: 4,
         toolchain: Some("system".to_string()),
+        exclusive: false,
     };
 
     let task_bytes = fory.serialize(&task).expect("task serialize");
@@ -301,4 +303,267 @@ async fn test_stage_started_transmission_over_duplex() {
         .deserialize(&received_payload)
         .expect("Deserialization");
     assert_eq!(decoded_started, started);
+}
+
+#[test]
+fn test_fory_stage_dispatch_task_exclusive_true() {
+    let fory = create_fory_runtime().expect("Fory runtime");
+    let task = StageDispatchTask {
+        job_id: "job-exclusive-101".to_string(),
+        stage_id: "bench-run".to_string(),
+        stage_name: "Hardware Micro-Benchmark".to_string(),
+        repo_name: "LMA1980/model-runner".to_string(),
+        clone_url: "git@github.com:LMA1980/model-runner.git".to_string(),
+        commit_sha: "abcd1234ef567890".to_string(),
+        command: "cargo bench -p k3-kernels-rvv".to_string(),
+        working_dir: Some("code".to_string()),
+        env_vars: vec![("BENCH_MODE".to_string(), "exclusive".to_string())],
+        timeout_seconds: 1800,
+        threads: 16,
+        toolchain: Some("nightly".to_string()),
+        exclusive: true,
+    };
+
+    let serialized = fory
+        .serialize(&task)
+        .expect("serialize StageDispatchTask (exclusive: true)");
+    assert!(
+        !serialized.is_empty(),
+        "Serialized bytes should not be empty"
+    );
+
+    let decoded: StageDispatchTask = fory
+        .deserialize(&serialized)
+        .expect("deserialize StageDispatchTask (exclusive: true)");
+    assert_eq!(task, decoded);
+    assert!(decoded.exclusive, "Decoded exclusive flag must be true");
+}
+
+#[test]
+fn test_fory_stage_dispatch_task_exclusive_false() {
+    let fory = create_fory_runtime().expect("Fory runtime");
+    let task = StageDispatchTask {
+        job_id: "job-shared-202".to_string(),
+        stage_id: "cargo-check".to_string(),
+        stage_name: "Workspace Check".to_string(),
+        repo_name: "LMA1980/model-runner".to_string(),
+        clone_url: "git@github.com:LMA1980/model-runner.git".to_string(),
+        commit_sha: "1234567890abcdef".to_string(),
+        command: "cargo check --workspace".to_string(),
+        working_dir: None,
+        env_vars: vec![],
+        timeout_seconds: 300,
+        threads: 4,
+        toolchain: None,
+        exclusive: false,
+    };
+
+    let serialized = fory
+        .serialize(&task)
+        .expect("serialize StageDispatchTask (exclusive: false)");
+    assert!(
+        !serialized.is_empty(),
+        "Serialized bytes should not be empty"
+    );
+
+    let decoded: StageDispatchTask = fory
+        .deserialize(&serialized)
+        .expect("deserialize StageDispatchTask (exclusive: false)");
+    assert_eq!(task, decoded);
+    assert!(!decoded.exclusive, "Decoded exclusive flag must be false");
+}
+
+#[tokio::test]
+async fn test_stage_dispatch_task_duplex_transmission_with_exclusivity() {
+    let (mut client, mut server) = duplex(4096);
+    let fory = create_fory_runtime().expect("Fory runtime");
+
+    // 1. Send exclusive = true task
+    let exclusive_task = StageDispatchTask {
+        job_id: "job-bench-01".to_string(),
+        stage_id: "bench-run".to_string(),
+        stage_name: "Hardware Micro-Benchmark".to_string(),
+        repo_name: "LMA1980/model-runner".to_string(),
+        clone_url: "git@github.com:LMA1980/model-runner.git".to_string(),
+        commit_sha: "commit-bench-1".to_string(),
+        command: "cargo bench".to_string(),
+        working_dir: Some("bench".to_string()),
+        env_vars: vec![],
+        timeout_seconds: 600,
+        threads: 8,
+        toolchain: Some("system".to_string()),
+        exclusive: true,
+    };
+    let payload_ex = fory
+        .serialize(&exclusive_task)
+        .expect("serialize exclusive task");
+    let hdr_ex = IpcHeader::new(MSG_TYPE_STAGE_DISPATCH, payload_ex.len() as u32, 0, 101);
+    write_frame(&mut client, &hdr_ex, &payload_ex)
+        .await
+        .expect("write exclusive frame");
+    let (recv_hdr_ex, recv_bytes_ex) = read_frame(&mut server).await.expect("read exclusive frame");
+    assert_eq!(recv_hdr_ex, hdr_ex);
+    let decoded_ex: StageDispatchTask = fory
+        .deserialize(&recv_bytes_ex)
+        .expect("deserialize exclusive task");
+    assert_eq!(exclusive_task, decoded_ex);
+    assert!(decoded_ex.exclusive);
+
+    // 2. Send exclusive = false task
+    let shared_task = StageDispatchTask {
+        job_id: "job-clippy-02".to_string(),
+        stage_id: "clippy-check".to_string(),
+        stage_name: "Clippy Check".to_string(),
+        repo_name: "LMA1980/model-runner".to_string(),
+        clone_url: "git@github.com:LMA1980/model-runner.git".to_string(),
+        commit_sha: "commit-clippy-2".to_string(),
+        command: "cargo clippy".to_string(),
+        working_dir: None,
+        env_vars: vec![],
+        timeout_seconds: 300,
+        threads: 2,
+        toolchain: None,
+        exclusive: false,
+    };
+    let payload_sh = fory.serialize(&shared_task).expect("serialize shared task");
+    let hdr_sh = IpcHeader::new(MSG_TYPE_STAGE_DISPATCH, payload_sh.len() as u32, 0, 102);
+    write_frame(&mut client, &hdr_sh, &payload_sh)
+        .await
+        .expect("write shared frame");
+    let (recv_hdr_sh, recv_bytes_sh) = read_frame(&mut server).await.expect("read shared frame");
+    assert_eq!(recv_hdr_sh, hdr_sh);
+    let decoded_sh: StageDispatchTask = fory
+        .deserialize(&recv_bytes_sh)
+        .expect("deserialize shared task");
+    assert_eq!(shared_task, decoded_sh);
+    assert!(!decoded_sh.exclusive);
+}
+
+#[tokio::test]
+async fn test_read_frame_rejects_oversized_payload() {
+    let (mut client, mut server) = duplex(1024);
+
+    let oversized_len = MAX_FRAME_SIZE + 1;
+    let header = IpcHeader::new(MSG_TYPE_STAGE_DISPATCH, oversized_len as u32, 0, 1);
+
+    client
+        .write_all(zerocopy::IntoBytes::as_bytes(&header))
+        .await
+        .expect("write header");
+
+    let err = read_frame(&mut server)
+        .await
+        .expect_err("read_frame must reject oversized payload");
+
+    match err {
+        IpcError::FrameTooLarge { max, actual } => {
+            assert_eq!(max, MAX_FRAME_SIZE);
+            assert_eq!(actual, oversized_len);
+        }
+        other => panic!("Expected IpcError::FrameTooLarge, got: {:?}", other),
+    }
+}
+
+#[tokio::test]
+async fn test_read_frame_rejects_u32_max_payload() {
+    let (mut client, mut server) = duplex(1024);
+
+    let header = IpcHeader::new(MSG_TYPE_STAGE_DISPATCH, u32::MAX, 0, 999);
+
+    client
+        .write_all(zerocopy::IntoBytes::as_bytes(&header))
+        .await
+        .expect("write header");
+
+    let err = read_frame(&mut server)
+        .await
+        .expect_err("read_frame must reject u32::MAX payload");
+
+    match err {
+        IpcError::FrameTooLarge { max, actual } => {
+            assert_eq!(max, MAX_FRAME_SIZE);
+            assert_eq!(actual, u32::MAX as usize);
+        }
+        other => panic!("Expected IpcError::FrameTooLarge, got: {:?}", other),
+    }
+}
+
+#[test]
+fn test_header_parse_rejects_unsupported_version_future() {
+    let mut header = IpcHeader::new(MSG_TYPE_STAGE_DISPATCH, 64, 0, 1);
+    header.version = 2;
+    let bytes = zerocopy::IntoBytes::as_bytes(&header);
+
+    let err = IpcHeader::parse(bytes).expect_err("Should reject version 2");
+    match err {
+        IpcError::UnsupportedVersion { expected, actual } => {
+            assert_eq!(expected, CURRENT_VERSION);
+            assert_eq!(actual, 2);
+        }
+        other => panic!("Expected IpcError::UnsupportedVersion, got: {:?}", other),
+    }
+}
+
+#[test]
+fn test_header_parse_rejects_unsupported_version_zero() {
+    let mut header = IpcHeader::new(MSG_TYPE_STAGE_DISPATCH, 64, 0, 1);
+    header.version = 0;
+    let bytes = zerocopy::IntoBytes::as_bytes(&header);
+
+    let err = IpcHeader::parse(bytes).expect_err("Should reject version 0");
+    match err {
+        IpcError::UnsupportedVersion { expected, actual } => {
+            assert_eq!(expected, CURRENT_VERSION);
+            assert_eq!(actual, 0);
+        }
+        other => panic!("Expected IpcError::UnsupportedVersion, got: {:?}", other),
+    }
+}
+
+#[tokio::test]
+async fn test_read_frame_rejects_unsupported_version_over_duplex() {
+    let (mut client, mut server) = duplex(1024);
+
+    let mut header = IpcHeader::new(MSG_TYPE_STAGE_DISPATCH, 32, 0, 1);
+    header.version = 99;
+
+    client
+        .write_all(zerocopy::IntoBytes::as_bytes(&header))
+        .await
+        .expect("write header");
+
+    let err = read_frame(&mut server)
+        .await
+        .expect_err("read_frame must reject unsupported version");
+
+    match err {
+        IpcError::UnsupportedVersion { expected, actual } => {
+            assert_eq!(expected, CURRENT_VERSION);
+            assert_eq!(actual, 99);
+        }
+        other => panic!("Expected IpcError::UnsupportedVersion, got: {:?}", other),
+    }
+}
+
+#[test]
+fn test_header_parse_rejects_invalid_magic() {
+    let mut header = IpcHeader::new(MSG_TYPE_STAGE_DISPATCH, 64, 0, 1);
+    header.magic = *b"NOPE";
+    let bytes = zerocopy::IntoBytes::as_bytes(&header);
+
+    let err = IpcHeader::parse(bytes).expect_err("Should reject invalid magic");
+    assert!(matches!(err, IpcError::InvalidMagic));
+}
+
+#[test]
+fn test_header_parse_rejects_buffer_too_small() {
+    let bytes = [0u8; 12];
+    let err = IpcHeader::parse(&bytes).expect_err("Should reject truncated buffer");
+    match err {
+        IpcError::BufferTooSmall { expected, actual } => {
+            assert_eq!(expected, HEADER_SIZE);
+            assert_eq!(actual, 12);
+        }
+        other => panic!("Expected IpcError::BufferTooSmall, got: {:?}", other),
+    }
 }
