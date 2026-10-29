@@ -43,6 +43,7 @@ pub struct StageDispatchTask {
     pub timeout_seconds: u64,
     pub threads: u32,
     pub toolchain: Option<String>,
+    pub exclusive: bool,
 }
 
 #[derive(ForyStruct, Debug, PartialEq, Clone)]

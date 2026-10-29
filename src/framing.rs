@@ -4,6 +4,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 pub const MAGIC: [u8; 4] = *b"K3CI";
 pub const CURRENT_VERSION: u16 = 1;
+pub const MAX_FRAME_SIZE: usize = 16 * 1024 * 1024;
 
 // Message Types
 pub const MSG_TYPE_WORKER_REGISTRATION: u16 = 0x01;
@@ -60,6 +61,13 @@ impl IpcHeader {
             return Err(IpcError::InvalidMagic);
         }
 
+        if hdr.version != CURRENT_VERSION {
+            return Err(IpcError::UnsupportedVersion {
+                expected: CURRENT_VERSION,
+                actual: hdr.version,
+            });
+        }
+
         Ok((hdr, rest))
     }
 }
@@ -73,6 +81,13 @@ pub async fn read_frame<R: AsyncRead + Unpin>(
     let (header, _) = IpcHeader::parse(&header_buf)?;
 
     let payload_len = header.payload_len as usize;
+    if payload_len > MAX_FRAME_SIZE {
+        return Err(IpcError::FrameTooLarge {
+            max: MAX_FRAME_SIZE,
+            actual: payload_len,
+        });
+    }
+
     let mut payload = vec![0u8; payload_len];
     if payload_len > 0 {
         reader.read_exact(&mut payload).await?;
