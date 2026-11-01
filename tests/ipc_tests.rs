@@ -1,11 +1,13 @@
 use action_runner_ipc::{
     create_fory_runtime, decode_log_batch, decode_metric_batch, encode_log_batch,
-    encode_metric_batch, read_frame, write_frame, IpcError, IpcHeader, LogEntry, MetricEntry,
-    StageCancelTask, StageCompletionReport, StageDispatchTask, WorkerHeartbeat, WorkerRegistration,
-    WorkerShutdown, CURRENT_VERSION, HEADER_SIZE, MAX_FRAME_SIZE, MSG_TYPE_ARROW_LOG,
-    MSG_TYPE_ARROW_METRIC, MSG_TYPE_STAGE_CANCEL, MSG_TYPE_STAGE_COMPLETION,
-    MSG_TYPE_STAGE_DISPATCH, MSG_TYPE_WORKER_HEARTBEAT, MSG_TYPE_WORKER_REGISTRATION,
-    MSG_TYPE_WORKER_SHUTDOWN,
+    encode_metric_batch, read_frame, write_frame, HostPrivilegeCeilingRequest,
+    HostPrivilegeCeilingResponse, IpcError, IpcHeader, LogEntry, MetricEntry, NetworkEgressMode,
+    SandboxBackendKind, SandboxConstraintSpec, SecurityGrantDenied, StageCancelTask,
+    StageCompletionReport, StageDispatchTask, TypedTaskInvocation, WorkerHeartbeat,
+    WorkerRegistration, WorkerShutdown, CURRENT_VERSION, HEADER_SIZE, MAX_FRAME_SIZE,
+    MSG_TYPE_ARROW_LOG, MSG_TYPE_ARROW_METRIC, MSG_TYPE_CEILING_REQ, MSG_TYPE_CEILING_RESP,
+    MSG_TYPE_STAGE_CANCEL, MSG_TYPE_STAGE_COMPLETION, MSG_TYPE_STAGE_DISPATCH,
+    MSG_TYPE_WORKER_HEARTBEAT, MSG_TYPE_WORKER_REGISTRATION, MSG_TYPE_WORKER_SHUTDOWN,
 };
 use tokio::io::{duplex, AsyncWriteExt};
 
@@ -27,7 +29,7 @@ async fn test_fory_control_transmission_over_duplex() {
 
     // 1. WorkerRegistration
     let reg = WorkerRegistration {
-        node_id: "rubicon".to_string(),
+        node_id: "node-a".to_string(),
         arch: "x86_64".to_string(),
         tags: vec![
             "x86_64".to_string(),
@@ -79,6 +81,9 @@ async fn test_fory_control_transmission_over_duplex() {
         threads: 4,
         toolchain: Some("system".to_string()),
         exclusive: false,
+        max_concurrent_per_node: 1,
+        tasks: vec![],
+        sandbox_constraints: SandboxConstraintSpec::default(),
     };
 
     let task_bytes = fory.serialize(&task).expect("task serialize");
@@ -98,6 +103,7 @@ async fn test_fory_control_transmission_over_duplex() {
         exit_code: 0,
         duration_secs: 42,
         error_message: None,
+        security_grant_denied: None,
     };
     let report_bytes = fory.serialize(&report).expect("report serialize");
     let report_hdr = IpcHeader::new(MSG_TYPE_STAGE_COMPLETION, report_bytes.len() as u32, 0, 3);
@@ -112,7 +118,7 @@ async fn test_fory_control_transmission_over_duplex() {
 
     // 4. WorkerHeartbeat
     let hb = WorkerHeartbeat {
-        node_id: "rubicon".to_string(),
+        node_id: "node-a".to_string(),
         active_slots: 2,
         cpu_load_pct: 48.5,
         ram_used_mb: 12400,
@@ -155,7 +161,7 @@ async fn test_arrow_log_batch_streaming_over_duplex() {
             timestamp_us: 1730000000000000,
             job_id: "job-101".to_string(),
             stage_id: "clippy-check".to_string(),
-            node_id: "rubicon".to_string(),
+            node_id: "node-a".to_string(),
             stream: 1,
             line_no: 1,
             content: "Running cargo clippy --workspace --all-targets -- -D warnings".to_string(),
@@ -164,7 +170,7 @@ async fn test_arrow_log_batch_streaming_over_duplex() {
             timestamp_us: 1730000001000000,
             job_id: "job-101".to_string(),
             stage_id: "clippy-check".to_string(),
-            node_id: "rubicon".to_string(),
+            node_id: "node-a".to_string(),
             stream: 1,
             line_no: 2,
             content: "Checking k3-core v0.1.0...".to_string(),
@@ -173,7 +179,7 @@ async fn test_arrow_log_batch_streaming_over_duplex() {
             timestamp_us: 1730000002000000,
             job_id: "job-101".to_string(),
             stage_id: "clippy-check".to_string(),
-            node_id: "rubicon".to_string(),
+            node_id: "node-a".to_string(),
             stream: 2,
             line_no: 3,
             content: "warning: unused variable in test module".to_string(),
@@ -245,7 +251,7 @@ async fn test_worker_shutdown_transmission_over_duplex() {
     let fory = create_fory_runtime().expect("Fory runtime");
 
     let shutdown = WorkerShutdown {
-        node_id: "pey-wail-deu".to_string(),
+        node_id: "worker-riscv64".to_string(),
         reason: "Daemon service restarting (SIGTERM)".to_string(),
         interrupted_stages: vec!["miri-check".to_string(), "bench-run".to_string()],
     };
@@ -279,7 +285,7 @@ async fn test_stage_started_transmission_over_duplex() {
     let started = action_runner_ipc::StageStarted {
         job_id: "job-100".to_string(),
         stage_id: "miri-check".to_string(),
-        node_id: "pey-wail-deu".to_string(),
+        node_id: "worker-riscv64".to_string(),
         pid: 48210,
         started_at_epoch_ms: 1729790000000,
     };
@@ -322,6 +328,9 @@ fn test_fory_stage_dispatch_task_exclusive_true() {
         threads: 16,
         toolchain: Some("nightly".to_string()),
         exclusive: true,
+        max_concurrent_per_node: 1,
+        tasks: vec![],
+        sandbox_constraints: SandboxConstraintSpec::default(),
     };
 
     let serialized = fory
@@ -356,6 +365,9 @@ fn test_fory_stage_dispatch_task_exclusive_false() {
         threads: 4,
         toolchain: None,
         exclusive: false,
+        max_concurrent_per_node: 1,
+        tasks: vec![],
+        sandbox_constraints: SandboxConstraintSpec::default(),
     };
 
     let serialized = fory
@@ -393,6 +405,9 @@ async fn test_stage_dispatch_task_duplex_transmission_with_exclusivity() {
         threads: 8,
         toolchain: Some("system".to_string()),
         exclusive: true,
+        max_concurrent_per_node: 1,
+        tasks: vec![],
+        sandbox_constraints: SandboxConstraintSpec::default(),
     };
     let payload_ex = fory
         .serialize(&exclusive_task)
@@ -424,6 +439,9 @@ async fn test_stage_dispatch_task_duplex_transmission_with_exclusivity() {
         threads: 2,
         toolchain: None,
         exclusive: false,
+        max_concurrent_per_node: 1,
+        tasks: vec![],
+        sandbox_constraints: SandboxConstraintSpec::default(),
     };
     let payload_sh = fory.serialize(&shared_task).expect("serialize shared task");
     let hdr_sh = IpcHeader::new(MSG_TYPE_STAGE_DISPATCH, payload_sh.len() as u32, 0, 102);
@@ -566,4 +584,502 @@ fn test_header_parse_rejects_buffer_too_small() {
         }
         other => panic!("Expected IpcError::BufferTooSmall, got: {:?}", other),
     }
+}
+
+#[tokio::test]
+async fn test_ceiling_handshake_and_sandbox_types_over_duplex() {
+    let (mut client, mut server) = duplex(8192);
+    let fory = create_fory_runtime().expect("Fory runtime");
+
+    let req = HostPrivilegeCeilingRequest {
+        request_id: "req-ceiling-001".to_string(),
+        controller_version: CURRENT_VERSION,
+    };
+    let req_bytes = fory.serialize(&req).expect("serialize ceiling req");
+    let req_hdr = IpcHeader::new(MSG_TYPE_CEILING_REQ, req_bytes.len() as u32, 0, 201);
+    write_frame(&mut client, &req_hdr, &req_bytes)
+        .await
+        .expect("write ceiling req");
+    let (recv_req_hdr, recv_req_bytes) = read_frame(&mut server).await.expect("read ceiling req");
+    assert_eq!(recv_req_hdr, req_hdr);
+    let decoded_req: HostPrivilegeCeilingRequest = fory
+        .deserialize(&recv_req_bytes)
+        .expect("decode ceiling req");
+    assert_eq!(req, decoded_req);
+
+    let ceiling = SandboxConstraintSpec {
+        profile_name: "host-operator-ceiling".to_string(),
+        backend: SandboxBackendKind::Hypervisor,
+        read_paths: vec!["/usr".to_string(), "/lib".to_string()],
+        write_paths: vec!["/var/lib/action-runner/work".to_string()],
+        exec_paths: vec!["/usr/bin".to_string()],
+        network_mode: NetworkEgressMode::RestrictedCidrs(vec![
+            "192.0.2.0/24".to_string(),
+            "198.51.100.0/24".to_string(),
+        ]),
+        memlock_limit_kb: 29_360_128,
+        max_pids: 512,
+        require_set_ai_thread: true,
+    };
+
+    let resp = HostPrivilegeCeilingResponse {
+        request_id: "req-ceiling-001".to_string(),
+        node_id: "worker-riscv64".to_string(),
+        ceiling: ceiling.clone(),
+        kvm_available: true,
+        spacemit_ai_thread_available: true,
+    };
+    let resp_bytes = fory.serialize(&resp).expect("serialize ceiling resp");
+    let resp_hdr = IpcHeader::new(MSG_TYPE_CEILING_RESP, resp_bytes.len() as u32, 0, 202);
+    write_frame(&mut server, &resp_hdr, &resp_bytes)
+        .await
+        .expect("write ceiling resp");
+    let (recv_resp_hdr, recv_resp_bytes) =
+        read_frame(&mut client).await.expect("read ceiling resp");
+    assert_eq!(recv_resp_hdr, resp_hdr);
+    let decoded_resp: HostPrivilegeCeilingResponse = fory
+        .deserialize(&recv_resp_bytes)
+        .expect("decode ceiling resp");
+    assert_eq!(resp, decoded_resp);
+
+    // Verify StageDispatchTask with TypedTaskInvocation and StageCompletionReport with SecurityGrantDenied
+    let dispatch = StageDispatchTask {
+        job_id: "job-sec-301".to_string(),
+        stage_id: "sandboxed-stage".to_string(),
+        stage_name: "Sandboxed Build".to_string(),
+        repo_name: "LMA1980/ActionRunner-rs".to_string(),
+        clone_url: "https://github.com/LMA1980/ActionRunner-rs.git".to_string(),
+        commit_sha: "deadbeef12345678".to_string(),
+        command: String::new(),
+        working_dir: Some(".".to_string()),
+        env_vars: vec![("RUST_BACKTRACE".to_string(), "1".to_string())],
+        timeout_seconds: 600,
+        threads: 6,
+        toolchain: Some("stable".to_string()),
+        exclusive: true,
+        max_concurrent_per_node: 1,
+        tasks: vec![TypedTaskInvocation {
+            task_id: "task-1".to_string(),
+            tool_name: "cargo".to_string(),
+            args: vec!["test".to_string(), "--workspace".to_string()],
+            working_dir: None,
+            env_vars: vec![],
+            sandbox: SandboxConstraintSpec {
+                profile_name: "default-offline".to_string(),
+                backend: SandboxBackendKind::Kernel,
+                read_paths: vec!["/usr".to_string()],
+                write_paths: vec!["/tmp".to_string()],
+                exec_paths: vec!["/usr/bin".to_string()],
+                network_mode: NetworkEgressMode::Offline,
+                memlock_limit_kb: 65536,
+                max_pids: 64,
+                require_set_ai_thread: false,
+            },
+        }],
+        sandbox_constraints: ceiling,
+    };
+    let dispatch_bytes = fory
+        .serialize(&dispatch)
+        .expect("serialize typed dispatch task");
+    let dispatch_hdr = IpcHeader::new(MSG_TYPE_STAGE_DISPATCH, dispatch_bytes.len() as u32, 0, 203);
+    write_frame(&mut client, &dispatch_hdr, &dispatch_bytes)
+        .await
+        .expect("write dispatch frame");
+    let (recv_dispatch_hdr, recv_dispatch_bytes) =
+        read_frame(&mut server).await.expect("read dispatch frame");
+    assert_eq!(recv_dispatch_hdr, dispatch_hdr);
+    let decoded_dispatch: StageDispatchTask = fory
+        .deserialize(&recv_dispatch_bytes)
+        .expect("deserialize typed dispatch task");
+    assert_eq!(dispatch, decoded_dispatch);
+
+    let denied_report = StageCompletionReport {
+        job_id: "job-sec-301".to_string(),
+        stage_id: "sandboxed-stage".to_string(),
+        exit_code: 126,
+        duration_secs: 1,
+        error_message: Some("Security grant denied by monotonic attenuation check".to_string()),
+        security_grant_denied: Some(SecurityGrantDenied {
+            job_id: "job-sec-301".to_string(),
+            stage_id: "sandboxed-stage".to_string(),
+            violated_layer: "workflow_override".to_string(),
+            offending_field: "memlock_limit_kb".to_string(),
+            requested_value: "67108864".to_string(),
+            ceiling_value: "29360128".to_string(),
+        }),
+    };
+    let report_bytes = fory
+        .serialize(&denied_report)
+        .expect("serialize denied completion report");
+    let report_hdr = IpcHeader::new(MSG_TYPE_STAGE_COMPLETION, report_bytes.len() as u32, 0, 204);
+    write_frame(&mut server, &report_hdr, &report_bytes)
+        .await
+        .expect("write denied report frame");
+    let (recv_report_hdr, recv_report_bytes) = read_frame(&mut client)
+        .await
+        .expect("read denied report frame");
+    assert_eq!(recv_report_hdr, report_hdr);
+    let decoded_report: StageCompletionReport = fory
+        .deserialize(&recv_report_bytes)
+        .expect("deserialize denied completion report");
+    assert_eq!(denied_report, decoded_report);
+}
+
+#[test]
+fn test_stage_dispatch_task_declarative_3tier_modes_fory_and_serde_json_roundtrip() {
+    let fory = create_fory_runtime().expect("Fory runtime");
+
+    // Mode A: SandboxBackendKind::Kernel with NetworkEgressMode::Offline
+    let task_kernel_offline = StageDispatchTask {
+        job_id: "job-3tier-kernel".to_string(),
+        stage_id: "cargo-test-kernel".to_string(),
+        stage_name: "Kernel Sandboxed Offline Unit Tests".to_string(),
+        repo_name: "LMA1980/ActionRunner-rs".to_string(),
+        clone_url: "https://github.com/LMA1980/ActionRunner-rs.git".to_string(),
+        commit_sha: "aaaaaaaa111122223333".to_string(),
+        command: String::new(),
+        working_dir: Some("runner".to_string()),
+        env_vars: vec![("RUST_LOG".to_string(), "info".to_string())],
+        timeout_seconds: 400,
+        threads: 4,
+        toolchain: Some("stable".to_string()),
+        exclusive: true,
+        max_concurrent_per_node: 1,
+        tasks: vec![TypedTaskInvocation {
+            task_id: "task-offline-1".to_string(),
+            tool_name: "cargo".to_string(),
+            args: vec!["test".to_string(), "--workspace".to_string()],
+            working_dir: Some("code".to_string()),
+            env_vars: vec![("OFFLINE_BUILD".to_string(), "1".to_string())],
+            sandbox: SandboxConstraintSpec {
+                profile_name: "kernel-offline".to_string(),
+                backend: SandboxBackendKind::Kernel,
+                read_paths: vec!["/usr".to_string(), "/lib".to_string()],
+                write_paths: vec!["/var/lib/action-runner/work".to_string()],
+                exec_paths: vec!["/usr/bin".to_string()],
+                network_mode: NetworkEgressMode::Offline,
+                memlock_limit_kb: 65536,
+                max_pids: 128,
+                require_set_ai_thread: false,
+            },
+        }],
+        sandbox_constraints: SandboxConstraintSpec {
+            profile_name: "node-ceiling-kernel".to_string(),
+            backend: SandboxBackendKind::Kernel,
+            read_paths: vec!["/usr".to_string(), "/lib".to_string()],
+            write_paths: vec!["/var/lib/action-runner/work".to_string()],
+            exec_paths: vec!["/usr/bin".to_string()],
+            network_mode: NetworkEgressMode::Offline,
+            memlock_limit_kb: 131072,
+            max_pids: 256,
+            require_set_ai_thread: false,
+        },
+    };
+
+    // Apache Fory binary roundtrip for Mode A
+    let fory_bytes_a = fory
+        .serialize(&task_kernel_offline)
+        .expect("fory serialize Mode A");
+    let fory_decoded_a: StageDispatchTask = fory
+        .deserialize(&fory_bytes_a)
+        .expect("fory deserialize Mode A");
+    assert_eq!(task_kernel_offline, fory_decoded_a);
+    assert_eq!(
+        fory_decoded_a.sandbox_constraints.backend,
+        SandboxBackendKind::Kernel
+    );
+    assert_eq!(
+        fory_decoded_a.sandbox_constraints.network_mode,
+        NetworkEgressMode::Offline
+    );
+
+    // serde_json roundtrip for Mode A
+    let json_str_a =
+        serde_json::to_string(&task_kernel_offline).expect("serde_json serialize Mode A");
+    let json_decoded_a: StageDispatchTask =
+        serde_json::from_str(&json_str_a).expect("serde_json deserialize Mode A");
+    assert_eq!(task_kernel_offline, json_decoded_a);
+
+    // Mode B: SandboxBackendKind::Hypervisor with NetworkEgressMode::RestrictedCidrs
+    let task_hypervisor_restricted = StageDispatchTask {
+        job_id: "job-3tier-hypervisor".to_string(),
+        stage_id: "network-fetch-stage".to_string(),
+        stage_name: "Hypervisor Sandboxed Egress Stage".to_string(),
+        repo_name: "LMA1980/ActionRunner-rs".to_string(),
+        clone_url: "https://github.com/LMA1980/ActionRunner-rs.git".to_string(),
+        commit_sha: "bbbbbbbb444455556666".to_string(),
+        command: String::new(),
+        working_dir: None,
+        env_vars: vec![],
+        timeout_seconds: 1200,
+        threads: 8,
+        toolchain: Some("nightly".to_string()),
+        exclusive: true,
+        max_concurrent_per_node: 1,
+        tasks: vec![TypedTaskInvocation {
+            task_id: "task-restricted-1".to_string(),
+            tool_name: "git".to_string(),
+            args: vec!["fetch".to_string(), "--all".to_string()],
+            working_dir: None,
+            env_vars: vec![],
+            sandbox: SandboxConstraintSpec {
+                profile_name: "hypervisor-restricted".to_string(),
+                backend: SandboxBackendKind::Hypervisor,
+                read_paths: vec!["/etc".to_string(), "/usr".to_string()],
+                write_paths: vec!["/var/lib/action-runner/repo".to_string()],
+                exec_paths: vec!["/usr/bin/git".to_string()],
+                network_mode: NetworkEgressMode::RestrictedCidrs(vec![
+                    "192.0.2.0/24".to_string(),
+                    "198.51.100.0/24".to_string(),
+                ]),
+                memlock_limit_kb: 29_360_128,
+                max_pids: 512,
+                require_set_ai_thread: true,
+            },
+        }],
+        sandbox_constraints: SandboxConstraintSpec {
+            profile_name: "node-ceiling-hypervisor".to_string(),
+            backend: SandboxBackendKind::Hypervisor,
+            read_paths: vec!["/etc".to_string(), "/usr".to_string()],
+            write_paths: vec!["/var/lib/action-runner/repo".to_string()],
+            exec_paths: vec!["/usr/bin".to_string()],
+            network_mode: NetworkEgressMode::RestrictedCidrs(vec![
+                "192.0.2.0/24".to_string(),
+                "198.51.100.0/24".to_string(),
+            ]),
+            memlock_limit_kb: 29_360_128,
+            max_pids: 1024,
+            require_set_ai_thread: true,
+        },
+    };
+
+    // Apache Fory binary roundtrip for Mode B
+    let fory_bytes_b = fory
+        .serialize(&task_hypervisor_restricted)
+        .expect("fory serialize Mode B");
+    let fory_decoded_b: StageDispatchTask = fory
+        .deserialize(&fory_bytes_b)
+        .expect("fory deserialize Mode B");
+    assert_eq!(task_hypervisor_restricted, fory_decoded_b);
+    assert_eq!(
+        fory_decoded_b.sandbox_constraints.backend,
+        SandboxBackendKind::Hypervisor
+    );
+    assert_eq!(
+        fory_decoded_b.sandbox_constraints.network_mode,
+        NetworkEgressMode::RestrictedCidrs(vec![
+            "192.0.2.0/24".to_string(),
+            "198.51.100.0/24".to_string(),
+        ])
+    );
+
+    // serde_json roundtrip for Mode B
+    let json_str_b =
+        serde_json::to_string(&task_hypervisor_restricted).expect("serde_json serialize Mode B");
+    let json_decoded_b: StageDispatchTask =
+        serde_json::from_str(&json_str_b).expect("serde_json deserialize Mode B");
+    assert_eq!(task_hypervisor_restricted, json_decoded_b);
+}
+
+#[test]
+fn test_stage_dispatch_task_legacy_fallback_fory_and_serde_json_roundtrip() {
+    let fory = create_fory_runtime().expect("Fory runtime");
+
+    // Phase 1-2 legacy fallback mode: tasks is empty, command is provided
+    let legacy_task = StageDispatchTask {
+        job_id: "job-legacy-999".to_string(),
+        stage_id: "legacy-test-stage".to_string(),
+        stage_name: "Phase 1-2 Legacy Fallback Execution".to_string(),
+        repo_name: "LMA1980/ActionRunner-rs".to_string(),
+        clone_url: "https://github.com/LMA1980/ActionRunner-rs.git".to_string(),
+        commit_sha: "cccccccc777788889999".to_string(),
+        command: "cargo test --workspace".to_string(),
+        working_dir: None,
+        env_vars: vec![("CI".to_string(), "true".to_string())],
+        timeout_seconds: 300,
+        threads: 2,
+        toolchain: None,
+        exclusive: false,
+        max_concurrent_per_node: 1,
+        tasks: vec![],
+        sandbox_constraints: SandboxConstraintSpec::default(),
+    };
+
+    assert!(
+        legacy_task.tasks.is_empty(),
+        "Legacy fallback mode tasks must be empty"
+    );
+    assert_eq!(legacy_task.command, "cargo test --workspace");
+
+    // Apache Fory binary roundtrip
+    let fory_bytes = fory
+        .serialize(&legacy_task)
+        .expect("fory serialize legacy task");
+    let fory_decoded: StageDispatchTask = fory
+        .deserialize(&fory_bytes)
+        .expect("fory deserialize legacy task");
+    assert_eq!(legacy_task, fory_decoded);
+    assert!(fory_decoded.tasks.is_empty());
+    assert_eq!(fory_decoded.command, "cargo test --workspace");
+
+    // serde_json roundtrip
+    let json_str = serde_json::to_string(&legacy_task).expect("serde_json serialize legacy task");
+    let json_decoded: StageDispatchTask =
+        serde_json::from_str(&json_str).expect("serde_json deserialize legacy task");
+    assert_eq!(legacy_task, json_decoded);
+    assert!(json_decoded.tasks.is_empty());
+    assert_eq!(json_decoded.command, "cargo test --workspace");
+}
+
+#[tokio::test]
+async fn test_host_privilege_ceiling_serde_json_and_duplex_frame_roundtrip() {
+    let (mut client, mut server) = duplex(8192);
+    let fory = create_fory_runtime().expect("Fory runtime");
+
+    // 1. HostPrivilegeCeilingRequest
+    let req = HostPrivilegeCeilingRequest {
+        request_id: "req-priv-ceiling-001".to_string(),
+        controller_version: CURRENT_VERSION,
+    };
+
+    // serde_json roundtrip for request
+    let req_json = serde_json::to_string(&req).expect("serde_json serialize ceiling req");
+    let req_json_decoded: HostPrivilegeCeilingRequest =
+        serde_json::from_str(&req_json).expect("serde_json deserialize ceiling req");
+    assert_eq!(req, req_json_decoded);
+
+    // Frame-level roundtrip for request
+    let req_fory_bytes = fory.serialize(&req).expect("fory serialize ceiling req");
+    let req_hdr = IpcHeader::new(MSG_TYPE_CEILING_REQ, req_fory_bytes.len() as u32, 0, 301);
+    write_frame(&mut client, &req_hdr, &req_fory_bytes)
+        .await
+        .expect("write frame ceiling req");
+    let (recv_req_hdr, recv_req_bytes) = read_frame(&mut server)
+        .await
+        .expect("read frame ceiling req");
+    assert_eq!(recv_req_hdr, req_hdr);
+    let decoded_req: HostPrivilegeCeilingRequest = fory
+        .deserialize(&recv_req_bytes)
+        .expect("fory decode ceiling req");
+    assert_eq!(req, decoded_req);
+
+    // 2. HostPrivilegeCeilingResponse
+    let resp = HostPrivilegeCeilingResponse {
+        request_id: "req-priv-ceiling-001".to_string(),
+        node_id: "worker-riscv64".to_string(),
+        ceiling: SandboxConstraintSpec {
+            profile_name: "operator-host-ceiling".to_string(),
+            backend: SandboxBackendKind::Hypervisor,
+            read_paths: vec!["/usr".to_string(), "/lib".to_string(), "/etc".to_string()],
+            write_paths: vec!["/var/lib/action-runner".to_string()],
+            exec_paths: vec!["/usr/bin".to_string()],
+            network_mode: NetworkEgressMode::RestrictedCidrs(vec![
+                "192.0.2.0/24".to_string(),
+                "198.51.100.0/24".to_string(),
+            ]),
+            memlock_limit_kb: 29_360_128,
+            max_pids: 1024,
+            require_set_ai_thread: true,
+        },
+        kvm_available: true,
+        spacemit_ai_thread_available: true,
+    };
+
+    // serde_json roundtrip for response
+    let resp_json = serde_json::to_string(&resp).expect("serde_json serialize ceiling resp");
+    let resp_json_decoded: HostPrivilegeCeilingResponse =
+        serde_json::from_str(&resp_json).expect("serde_json deserialize ceiling resp");
+    assert_eq!(resp, resp_json_decoded);
+
+    // Frame-level roundtrip for response
+    let resp_fory_bytes = fory.serialize(&resp).expect("fory serialize ceiling resp");
+    let resp_hdr = IpcHeader::new(MSG_TYPE_CEILING_RESP, resp_fory_bytes.len() as u32, 0, 302);
+    write_frame(&mut server, &resp_hdr, &resp_fory_bytes)
+        .await
+        .expect("write frame ceiling resp");
+    let (recv_resp_hdr, recv_resp_bytes) = read_frame(&mut client)
+        .await
+        .expect("read frame ceiling resp");
+    assert_eq!(recv_resp_hdr, resp_hdr);
+    let decoded_resp: HostPrivilegeCeilingResponse = fory
+        .deserialize(&recv_resp_bytes)
+        .expect("fory decode ceiling resp");
+    assert_eq!(resp, decoded_resp);
+}
+
+#[tokio::test]
+async fn test_stage_completion_report_security_grant_denied_serde_json_and_frame_roundtrip() {
+    let (mut client, mut server) = duplex(4096);
+    let fory = create_fory_runtime().expect("Fory runtime");
+
+    let denied_report = StageCompletionReport {
+        job_id: "job-security-violation-501".to_string(),
+        stage_id: "priv-escalate-stage".to_string(),
+        exit_code: 126,
+        duration_secs: 2,
+        error_message: Some(
+            "Security grant denied: requested memlock limit exceeds host privilege ceiling"
+                .to_string(),
+        ),
+        security_grant_denied: Some(SecurityGrantDenied {
+            job_id: "job-security-violation-501".to_string(),
+            stage_id: "priv-escalate-stage".to_string(),
+            violated_layer: "workflow_override".to_string(),
+            offending_field: "memlock_limit_kb".to_string(),
+            requested_value: "67108864".to_string(),
+            ceiling_value: "29360128".to_string(),
+        }),
+    };
+
+    // serde_json roundtrip
+    let report_json =
+        serde_json::to_string(&denied_report).expect("serde_json serialize denied report");
+    let report_json_decoded: StageCompletionReport =
+        serde_json::from_str(&report_json).expect("serde_json deserialize denied report");
+    assert_eq!(denied_report, report_json_decoded);
+    assert_eq!(
+        report_json_decoded
+            .security_grant_denied
+            .as_ref()
+            .unwrap()
+            .offending_field,
+        "memlock_limit_kb"
+    );
+    assert_eq!(
+        report_json_decoded
+            .security_grant_denied
+            .as_ref()
+            .unwrap()
+            .violated_layer,
+        "workflow_override"
+    );
+
+    // Apache Fory binary roundtrip
+    let report_fory_bytes = fory
+        .serialize(&denied_report)
+        .expect("fory serialize denied report");
+    let report_fory_decoded: StageCompletionReport = fory
+        .deserialize(&report_fory_bytes)
+        .expect("fory deserialize denied report");
+    assert_eq!(denied_report, report_fory_decoded);
+
+    // Full frame-level duplex roundtrip
+    let report_hdr = IpcHeader::new(
+        MSG_TYPE_STAGE_COMPLETION,
+        report_fory_bytes.len() as u32,
+        0,
+        401,
+    );
+    write_frame(&mut client, &report_hdr, &report_fory_bytes)
+        .await
+        .expect("write frame denied report");
+    let (recv_hdr, recv_payload) = read_frame(&mut server)
+        .await
+        .expect("read frame denied report");
+    assert_eq!(recv_hdr, report_hdr);
+    let decoded_framed_report: StageCompletionReport = fory
+        .deserialize(&recv_payload)
+        .expect("fory decode framed denied report");
+    assert_eq!(denied_report, decoded_framed_report);
+    assert!(decoded_framed_report.security_grant_denied.is_some());
 }
