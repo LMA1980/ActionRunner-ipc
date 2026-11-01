@@ -18,6 +18,8 @@ pub const MSG_TYPE_CEILING_REQ: u16 = 0x08;
 pub const MSG_TYPE_CEILING_RESP: u16 = 0x09;
 pub const MSG_TYPE_ARROW_LOG: u16 = 0x10;
 pub const MSG_TYPE_ARROW_METRIC: u16 = 0x11;
+pub const MSG_TYPE_ARROW_TEST_RUNS: u16 = 0x12;
+pub const MSG_TYPE_ARROW_BENCH_RUNS: u16 = 0x13;
 
 // Flags
 pub const FLAG_COMPRESSED: u32 = 0x01;
