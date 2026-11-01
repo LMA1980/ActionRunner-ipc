@@ -1,13 +1,16 @@
 use action_runner_ipc::{
-    create_fory_runtime, decode_log_batch, decode_metric_batch, encode_log_batch,
-    encode_metric_batch, read_frame, write_frame, HostPrivilegeCeilingRequest,
-    HostPrivilegeCeilingResponse, IpcError, IpcHeader, LogEntry, MetricEntry, NetworkEgressMode,
-    SandboxBackendKind, SandboxConstraintSpec, SecurityGrantDenied, StageCancelTask,
-    StageCompletionReport, StageDispatchTask, TypedTaskInvocation, WorkerHeartbeat,
-    WorkerRegistration, WorkerShutdown, CURRENT_VERSION, HEADER_SIZE, MAX_FRAME_SIZE,
-    MSG_TYPE_ARROW_LOG, MSG_TYPE_ARROW_METRIC, MSG_TYPE_CEILING_REQ, MSG_TYPE_CEILING_RESP,
+    bench_runs_schema, create_fory_runtime, decode_bench_runs_batch, decode_log_batch,
+    decode_metric_batch, decode_test_runs_batch, encode_bench_runs_batch, encode_log_batch,
+    encode_metric_batch, encode_test_runs_batch, read_frame, test_runs_schema, write_frame,
+    BenchmarkRunRecord, HostPrivilegeCeilingRequest, HostPrivilegeCeilingResponse, IpcError,
+    IpcHeader, LogEntry, MetricEntry, NetworkEgressMode, SandboxBackendKind, SandboxConstraintSpec,
+    SecurityGrantDenied, StageCancelTask, StageCompletionReport, StageDispatchTask, StageStarted,
+    TestCaseRunRecord, TypedTaskInvocation, WorkerHeartbeat, WorkerRegistration, WorkerShutdown,
+    CURRENT_VERSION, HEADER_SIZE, MAX_FRAME_SIZE, MSG_TYPE_ARROW_BENCH_RUNS, MSG_TYPE_ARROW_LOG,
+    MSG_TYPE_ARROW_METRIC, MSG_TYPE_ARROW_TEST_RUNS, MSG_TYPE_CEILING_REQ, MSG_TYPE_CEILING_RESP,
     MSG_TYPE_STAGE_CANCEL, MSG_TYPE_STAGE_COMPLETION, MSG_TYPE_STAGE_DISPATCH,
-    MSG_TYPE_WORKER_HEARTBEAT, MSG_TYPE_WORKER_REGISTRATION, MSG_TYPE_WORKER_SHUTDOWN,
+    MSG_TYPE_STAGE_STARTED, MSG_TYPE_WORKER_HEARTBEAT, MSG_TYPE_WORKER_REGISTRATION,
+    MSG_TYPE_WORKER_SHUTDOWN,
 };
 use tokio::io::{duplex, AsyncWriteExt};
 
@@ -84,6 +87,7 @@ async fn test_fory_control_transmission_over_duplex() {
         max_concurrent_per_node: 1,
         tasks: vec![],
         sandbox_constraints: SandboxConstraintSpec::default(),
+        traceparent: None,
     };
 
     let task_bytes = fory.serialize(&task).expect("task serialize");
@@ -104,6 +108,7 @@ async fn test_fory_control_transmission_over_duplex() {
         duration_secs: 42,
         error_message: None,
         security_grant_denied: None,
+        traceparent: None,
     };
     let report_bytes = fory.serialize(&report).expect("report serialize");
     let report_hdr = IpcHeader::new(MSG_TYPE_STAGE_COMPLETION, report_bytes.len() as u32, 0, 3);
@@ -288,6 +293,7 @@ async fn test_stage_started_transmission_over_duplex() {
         node_id: "worker-riscv64".to_string(),
         pid: 48210,
         started_at_epoch_ms: 1729790000000,
+        traceparent: None,
     };
 
     let serialized_payload = fory.serialize(&started).expect("Serialization");
@@ -331,6 +337,7 @@ fn test_fory_stage_dispatch_task_exclusive_true() {
         max_concurrent_per_node: 1,
         tasks: vec![],
         sandbox_constraints: SandboxConstraintSpec::default(),
+        traceparent: None,
     };
 
     let serialized = fory
@@ -368,6 +375,7 @@ fn test_fory_stage_dispatch_task_exclusive_false() {
         max_concurrent_per_node: 1,
         tasks: vec![],
         sandbox_constraints: SandboxConstraintSpec::default(),
+        traceparent: None,
     };
 
     let serialized = fory
@@ -408,6 +416,7 @@ async fn test_stage_dispatch_task_duplex_transmission_with_exclusivity() {
         max_concurrent_per_node: 1,
         tasks: vec![],
         sandbox_constraints: SandboxConstraintSpec::default(),
+        traceparent: None,
     };
     let payload_ex = fory
         .serialize(&exclusive_task)
@@ -442,6 +451,7 @@ async fn test_stage_dispatch_task_duplex_transmission_with_exclusivity() {
         max_concurrent_per_node: 1,
         tasks: vec![],
         sandbox_constraints: SandboxConstraintSpec::default(),
+        traceparent: None,
     };
     let payload_sh = fory.serialize(&shared_task).expect("serialize shared task");
     let hdr_sh = IpcHeader::new(MSG_TYPE_STAGE_DISPATCH, payload_sh.len() as u32, 0, 102);
@@ -677,6 +687,7 @@ async fn test_ceiling_handshake_and_sandbox_types_over_duplex() {
             },
         }],
         sandbox_constraints: ceiling,
+        traceparent: None,
     };
     let dispatch_bytes = fory
         .serialize(&dispatch)
@@ -707,6 +718,7 @@ async fn test_ceiling_handshake_and_sandbox_types_over_duplex() {
             requested_value: "67108864".to_string(),
             ceiling_value: "29360128".to_string(),
         }),
+        traceparent: None,
     };
     let report_bytes = fory
         .serialize(&denied_report)
@@ -774,6 +786,7 @@ fn test_stage_dispatch_task_declarative_3tier_modes_fory_and_serde_json_roundtri
             max_pids: 256,
             require_set_ai_thread: false,
         },
+        traceparent: None,
     };
 
     // Apache Fory binary roundtrip for Mode A
@@ -851,6 +864,7 @@ fn test_stage_dispatch_task_declarative_3tier_modes_fory_and_serde_json_roundtri
             max_pids: 1024,
             require_set_ai_thread: true,
         },
+        traceparent: None,
     };
 
     // Apache Fory binary roundtrip for Mode B
@@ -903,6 +917,7 @@ fn test_stage_dispatch_task_legacy_fallback_fory_and_serde_json_roundtrip() {
         max_concurrent_per_node: 1,
         tasks: vec![],
         sandbox_constraints: SandboxConstraintSpec::default(),
+        traceparent: None,
     };
 
     assert!(
@@ -1029,6 +1044,7 @@ async fn test_stage_completion_report_security_grant_denied_serde_json_and_frame
             requested_value: "67108864".to_string(),
             ceiling_value: "29360128".to_string(),
         }),
+        traceparent: None,
     };
 
     // serde_json roundtrip
@@ -1082,4 +1098,218 @@ async fn test_stage_completion_report_security_grant_denied_serde_json_and_frame
         .expect("fory decode framed denied report");
     assert_eq!(denied_report, decoded_framed_report);
     assert!(decoded_framed_report.security_grant_denied.is_some());
+}
+
+#[tokio::test]
+async fn test_traceparent_propagation_and_backward_compatible_serde_roundtrip() {
+    let (mut client, mut server) = duplex(8192);
+    let fory = create_fory_runtime().expect("Fory runtime");
+    let tp = Some("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01".to_string());
+
+    // 1. StageDispatchTask with traceparent Some(...)
+    let dispatch = StageDispatchTask {
+        job_id: "job-otel-01".to_string(),
+        stage_id: "test-stage".to_string(),
+        stage_name: "Cargo Test".to_string(),
+        repo_name: "LMA1980/ActionRunner-ipc".to_string(),
+        clone_url: "https://github.com/LMA1980/ActionRunner-ipc.git".to_string(),
+        commit_sha: "1122334455667788".to_string(),
+        command: String::new(),
+        working_dir: None,
+        env_vars: vec![],
+        timeout_seconds: 300,
+        threads: 4,
+        toolchain: None,
+        exclusive: false,
+        max_concurrent_per_node: 1,
+        tasks: vec![],
+        sandbox_constraints: SandboxConstraintSpec::default(),
+        traceparent: tp.clone(),
+    };
+
+    let dispatch_bytes = fory.serialize(&dispatch).expect("serialize dispatch");
+    let dispatch_hdr = IpcHeader::new(MSG_TYPE_STAGE_DISPATCH, dispatch_bytes.len() as u32, 0, 501);
+    write_frame(&mut client, &dispatch_hdr, &dispatch_bytes)
+        .await
+        .expect("write dispatch");
+    let (_, recv_dispatch_bytes) = read_frame(&mut server).await.expect("read dispatch");
+    let decoded_dispatch: StageDispatchTask = fory
+        .deserialize(&recv_dispatch_bytes)
+        .expect("deserialize dispatch");
+    assert_eq!(decoded_dispatch.traceparent, tp);
+    assert_eq!(decoded_dispatch, dispatch);
+
+    // Verify #[serde(default)] backward compatibility when JSON omits traceparent
+    let legacy_json = r#"{
+        "job_id": "job-legacy",
+        "stage_id": "s1",
+        "stage_name": "Stage 1",
+        "repo_name": "LMA1980/ActionRunner-ipc",
+        "clone_url": "https://github.com/LMA1980/ActionRunner-ipc.git",
+        "commit_sha": "deadbeef",
+        "command": "cargo test",
+        "working_dir": null,
+        "env_vars": [],
+        "timeout_seconds": 60,
+        "threads": 2,
+        "toolchain": null,
+        "exclusive": false,
+        "max_concurrent_per_node": 1,
+        "tasks": [],
+        "sandbox_constraints": {
+            "profile_name": "",
+            "backend": "Kernel",
+            "read_paths": [],
+            "write_paths": [],
+            "exec_paths": [],
+            "network_mode": "Offline",
+            "memlock_limit_kb": 0,
+            "max_pids": 0,
+            "require_set_ai_thread": false
+        }
+    }"#;
+    let parsed_legacy: StageDispatchTask =
+        serde_json::from_str(legacy_json).expect("legacy json without traceparent must parse");
+    assert_eq!(parsed_legacy.traceparent, None);
+
+    // 2. StageStarted with traceparent Some(...)
+    let started = StageStarted {
+        job_id: "job-otel-01".to_string(),
+        stage_id: "test-stage".to_string(),
+        node_id: "worker-riscv64".to_string(),
+        pid: 12345,
+        started_at_epoch_ms: 1730000000000,
+        traceparent: tp.clone(),
+    };
+    let started_bytes = fory.serialize(&started).expect("serialize started");
+    let started_hdr = IpcHeader::new(MSG_TYPE_STAGE_STARTED, started_bytes.len() as u32, 0, 502);
+    write_frame(&mut server, &started_hdr, &started_bytes)
+        .await
+        .expect("write started");
+    let (_, recv_started_bytes) = read_frame(&mut client).await.expect("read started");
+    let decoded_started: StageStarted = fory
+        .deserialize(&recv_started_bytes)
+        .expect("deserialize started");
+    assert_eq!(decoded_started.traceparent, tp);
+    assert_eq!(decoded_started, started);
+
+    // 3. StageCompletionReport with traceparent Some(...)
+    let report = StageCompletionReport {
+        job_id: "job-otel-01".to_string(),
+        stage_id: "test-stage".to_string(),
+        exit_code: 0,
+        duration_secs: 15,
+        error_message: None,
+        security_grant_denied: None,
+        traceparent: tp.clone(),
+    };
+    let report_bytes = fory.serialize(&report).expect("serialize completion");
+    let report_hdr = IpcHeader::new(MSG_TYPE_STAGE_COMPLETION, report_bytes.len() as u32, 0, 503);
+    write_frame(&mut server, &report_hdr, &report_bytes)
+        .await
+        .expect("write completion");
+    let (_, recv_report_bytes) = read_frame(&mut client).await.expect("read completion");
+    let decoded_report: StageCompletionReport = fory
+        .deserialize(&recv_report_bytes)
+        .expect("deserialize completion");
+    assert_eq!(decoded_report.traceparent, tp);
+    assert_eq!(decoded_report, report);
+}
+
+#[tokio::test]
+async fn test_arrow_test_runs_and_bench_runs_batches_over_duplex() {
+    let (mut client, mut server) = duplex(16384);
+
+    assert_eq!(test_runs_schema().fields().len(), 12);
+    assert_eq!(bench_runs_schema().fields().len(), 14);
+
+    let test_records = vec![
+        TestCaseRunRecord {
+            timestamp_us: 1730000000000000,
+            job_id: "job-201".to_string(),
+            stage_id: "unit-tests".to_string(),
+            repo_key: "LMA1980/ActionRunner-tools".to_string(),
+            branch_key: "main".to_string(),
+            commit_sha: "abcdef0123456789".to_string(),
+            crate_name: "action-runner-tools".to_string(),
+            test_binary: "security_injection_tests".to_string(),
+            test_name: "test_cargo_test_adapter".to_string(),
+            status: "Passed".to_string(),
+            duration_ms: Some(12),
+            failure_summary: None,
+        },
+        TestCaseRunRecord {
+            timestamp_us: 1730000000012000,
+            job_id: "job-201".to_string(),
+            stage_id: "unit-tests".to_string(),
+            repo_key: "LMA1980/ActionRunner-tools".to_string(),
+            branch_key: "main".to_string(),
+            commit_sha: "abcdef0123456789".to_string(),
+            crate_name: "action-runner-tools".to_string(),
+            test_binary: "security_injection_tests".to_string(),
+            test_name: "test_failing_case".to_string(),
+            status: "Failed".to_string(),
+            duration_ms: Some(4),
+            failure_summary: Some("assertion failed: left == right".to_string()),
+        },
+    ];
+
+    let test_bytes = encode_test_runs_batch(&test_records).expect("encode test runs batch");
+    let test_hdr = IpcHeader::new(MSG_TYPE_ARROW_TEST_RUNS, test_bytes.len() as u32, 0, 601);
+    write_frame(&mut client, &test_hdr, &test_bytes)
+        .await
+        .expect("write test runs frame");
+    let (recv_test_hdr, recv_test_payload) =
+        read_frame(&mut server).await.expect("read test runs frame");
+    assert_eq!(recv_test_hdr, test_hdr);
+    let decoded_tests = decode_test_runs_batch(&recv_test_payload).expect("decode test runs batch");
+    assert_eq!(decoded_tests, test_records);
+
+    let bench_records = vec![
+        BenchmarkRunRecord {
+            timestamp_us: 1730000001000000,
+            job_id: "job-201".to_string(),
+            stage_id: "rvv-benches".to_string(),
+            repo_key: "LMA1980/k3-kernels-rvv".to_string(),
+            branch_key: "main".to_string(),
+            commit_sha: "abcdef0123456789".to_string(),
+            crate_name: "k3-kernels-rvv".to_string(),
+            bench_name: "kernels::gemm_q4_0".to_string(),
+            ns_per_iter: 1240.5,
+            variance_ns: 35.0,
+            throughput_mb_s: Some(4096.0),
+            arch: "riscv64".to_string(),
+            cpu_cluster: "A100".to_string(),
+            vlen_bits: 1024,
+        },
+        BenchmarkRunRecord {
+            timestamp_us: 1730000002000000,
+            job_id: "job-201".to_string(),
+            stage_id: "rvv-benches".to_string(),
+            repo_key: "LMA1980/k3-kernels-rvv".to_string(),
+            branch_key: "main".to_string(),
+            commit_sha: "abcdef0123456789".to_string(),
+            crate_name: "k3-kernels-rvv".to_string(),
+            bench_name: "kernels::scalar_fallback".to_string(),
+            ns_per_iter: 8420.0,
+            variance_ns: 110.0,
+            throughput_mb_s: None,
+            arch: "riscv64".to_string(),
+            cpu_cluster: "X100".to_string(),
+            vlen_bits: 256,
+        },
+    ];
+
+    let bench_bytes = encode_bench_runs_batch(&bench_records).expect("encode bench runs batch");
+    let bench_hdr = IpcHeader::new(MSG_TYPE_ARROW_BENCH_RUNS, bench_bytes.len() as u32, 0, 602);
+    write_frame(&mut client, &bench_hdr, &bench_bytes)
+        .await
+        .expect("write bench runs frame");
+    let (recv_bench_hdr, recv_bench_payload) = read_frame(&mut server)
+        .await
+        .expect("read bench runs frame");
+    assert_eq!(recv_bench_hdr, bench_hdr);
+    let decoded_benches =
+        decode_bench_runs_batch(&recv_bench_payload).expect("decode bench runs batch");
+    assert_eq!(decoded_benches, bench_records);
 }

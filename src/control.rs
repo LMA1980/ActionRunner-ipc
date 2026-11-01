@@ -134,7 +134,7 @@ pub struct WorkerHeartbeat {
     pub timestamp_epoch_ms: u64,
 }
 
-#[derive(ForyStruct, Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(ForyStruct, Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 pub struct StageDispatchTask {
     pub job_id: String,
     pub stage_id: String,
@@ -152,9 +152,11 @@ pub struct StageDispatchTask {
     pub max_concurrent_per_node: u32,
     pub tasks: Vec<TypedTaskInvocation>,
     pub sandbox_constraints: SandboxConstraintSpec,
+    #[serde(default)]
+    pub traceparent: Option<String>,
 }
 
-#[derive(ForyStruct, Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(ForyStruct, Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 pub struct StageCompletionReport {
     pub job_id: String,
     pub stage_id: String,
@@ -162,6 +164,8 @@ pub struct StageCompletionReport {
     pub duration_secs: u64,
     pub error_message: Option<String>,
     pub security_grant_denied: Option<SecurityGrantDenied>,
+    #[serde(default)]
+    pub traceparent: Option<String>,
 }
 
 #[derive(ForyStruct, Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -178,13 +182,15 @@ pub struct WorkerShutdown {
     pub interrupted_stages: Vec<String>,
 }
 
-#[derive(ForyStruct, Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(ForyStruct, Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 pub struct StageStarted {
     pub job_id: String,
     pub stage_id: String,
     pub node_id: String,
     pub pid: u32,
     pub started_at_epoch_ms: u64,
+    #[serde(default)]
+    pub traceparent: Option<String>,
 }
 
 pub fn create_fory_runtime() -> Result<Fory, IpcError> {
