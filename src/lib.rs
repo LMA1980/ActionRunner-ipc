@@ -12,13 +12,13 @@ pub use arrow_stream::{
 };
 pub use control::{
     create_fory_runtime, HostPrivilegeCeilingRequest, HostPrivilegeCeilingResponse,
-    NetworkEgressMode, SandboxBackendKind, SandboxConstraintSpec, SecurityGrantDenied,
+    NetworkEgressMode, SandboxBackendKind, SandboxConstraintSpec, SccacheMode, SecurityGrantDenied,
     StageCancelTask, StageCompletionReport, StageDispatchTask, StageStarted, TypedTaskInvocation,
     WorkerHeartbeat, WorkerRegistration, WorkerShutdown, FORY_ID_CANCEL, FORY_ID_CEILING_REQ,
     FORY_ID_CEILING_RESP, FORY_ID_COMPLETION, FORY_ID_DISPATCH, FORY_ID_HEARTBEAT,
     FORY_ID_NETWORK_EGRESS_MODE, FORY_ID_REGISTRATION, FORY_ID_SANDBOX_BACKEND_KIND,
-    FORY_ID_SANDBOX_CONSTRAINT_SPEC, FORY_ID_SECURITY_GRANT_DENIED, FORY_ID_STAGE_STARTED,
-    FORY_ID_TYPED_TASK_INVOCATION, FORY_ID_WORKER_SHUTDOWN,
+    FORY_ID_SANDBOX_CONSTRAINT_SPEC, FORY_ID_SCCACHE_MODE, FORY_ID_SECURITY_GRANT_DENIED,
+    FORY_ID_STAGE_STARTED, FORY_ID_TYPED_TASK_INVOCATION, FORY_ID_WORKER_SHUTDOWN,
 };
 pub use error::IpcError;
 pub use framing::{

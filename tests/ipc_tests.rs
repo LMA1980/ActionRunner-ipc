@@ -4,13 +4,13 @@ use action_runner_ipc::{
     encode_metric_batch, encode_test_runs_batch, read_frame, test_runs_schema, write_frame,
     BenchmarkRunRecord, HostPrivilegeCeilingRequest, HostPrivilegeCeilingResponse, IpcError,
     IpcHeader, LogEntry, MetricEntry, NetworkEgressMode, SandboxBackendKind, SandboxConstraintSpec,
-    SecurityGrantDenied, StageCancelTask, StageCompletionReport, StageDispatchTask, StageStarted,
-    TestCaseRunRecord, TypedTaskInvocation, WorkerHeartbeat, WorkerRegistration, WorkerShutdown,
-    CURRENT_VERSION, HEADER_SIZE, MAX_FRAME_SIZE, MSG_TYPE_ARROW_BENCH_RUNS, MSG_TYPE_ARROW_LOG,
-    MSG_TYPE_ARROW_METRIC, MSG_TYPE_ARROW_TEST_RUNS, MSG_TYPE_CEILING_REQ, MSG_TYPE_CEILING_RESP,
-    MSG_TYPE_STAGE_CANCEL, MSG_TYPE_STAGE_COMPLETION, MSG_TYPE_STAGE_DISPATCH,
-    MSG_TYPE_STAGE_STARTED, MSG_TYPE_WORKER_HEARTBEAT, MSG_TYPE_WORKER_REGISTRATION,
-    MSG_TYPE_WORKER_SHUTDOWN,
+    SccacheMode, SecurityGrantDenied, StageCancelTask, StageCompletionReport, StageDispatchTask,
+    StageStarted, TestCaseRunRecord, TypedTaskInvocation, WorkerHeartbeat, WorkerRegistration,
+    WorkerShutdown, CURRENT_VERSION, HEADER_SIZE, MAX_FRAME_SIZE, MSG_TYPE_ARROW_BENCH_RUNS,
+    MSG_TYPE_ARROW_LOG, MSG_TYPE_ARROW_METRIC, MSG_TYPE_ARROW_TEST_RUNS, MSG_TYPE_CEILING_REQ,
+    MSG_TYPE_CEILING_RESP, MSG_TYPE_STAGE_CANCEL, MSG_TYPE_STAGE_COMPLETION,
+    MSG_TYPE_STAGE_DISPATCH, MSG_TYPE_STAGE_STARTED, MSG_TYPE_WORKER_HEARTBEAT,
+    MSG_TYPE_WORKER_REGISTRATION, MSG_TYPE_WORKER_SHUTDOWN,
 };
 use tokio::io::{duplex, AsyncWriteExt};
 
@@ -88,6 +88,7 @@ async fn test_fory_control_transmission_over_duplex() {
         tasks: vec![],
         sandbox_constraints: SandboxConstraintSpec::default(),
         traceparent: None,
+        sccache_mode: SccacheMode::default(),
     };
 
     let task_bytes = fory.serialize(&task).expect("task serialize");
@@ -338,6 +339,7 @@ fn test_fory_stage_dispatch_task_exclusive_true() {
         tasks: vec![],
         sandbox_constraints: SandboxConstraintSpec::default(),
         traceparent: None,
+        sccache_mode: SccacheMode::default(),
     };
 
     let serialized = fory
@@ -376,6 +378,7 @@ fn test_fory_stage_dispatch_task_exclusive_false() {
         tasks: vec![],
         sandbox_constraints: SandboxConstraintSpec::default(),
         traceparent: None,
+        sccache_mode: SccacheMode::default(),
     };
 
     let serialized = fory
@@ -417,6 +420,7 @@ async fn test_stage_dispatch_task_duplex_transmission_with_exclusivity() {
         tasks: vec![],
         sandbox_constraints: SandboxConstraintSpec::default(),
         traceparent: None,
+        sccache_mode: SccacheMode::default(),
     };
     let payload_ex = fory
         .serialize(&exclusive_task)
@@ -452,6 +456,7 @@ async fn test_stage_dispatch_task_duplex_transmission_with_exclusivity() {
         tasks: vec![],
         sandbox_constraints: SandboxConstraintSpec::default(),
         traceparent: None,
+        sccache_mode: SccacheMode::default(),
     };
     let payload_sh = fory.serialize(&shared_task).expect("serialize shared task");
     let hdr_sh = IpcHeader::new(MSG_TYPE_STAGE_DISPATCH, payload_sh.len() as u32, 0, 102);
@@ -685,9 +690,11 @@ async fn test_ceiling_handshake_and_sandbox_types_over_duplex() {
                 max_pids: 64,
                 require_set_ai_thread: false,
             },
+            sccache_mode: SccacheMode::default(),
         }],
         sandbox_constraints: ceiling,
         traceparent: None,
+        sccache_mode: SccacheMode::default(),
     };
     let dispatch_bytes = fory
         .serialize(&dispatch)
@@ -774,6 +781,7 @@ fn test_stage_dispatch_task_declarative_3tier_modes_fory_and_serde_json_roundtri
                 max_pids: 128,
                 require_set_ai_thread: false,
             },
+            sccache_mode: SccacheMode::default(),
         }],
         sandbox_constraints: SandboxConstraintSpec {
             profile_name: "node-ceiling-kernel".to_string(),
@@ -787,6 +795,7 @@ fn test_stage_dispatch_task_declarative_3tier_modes_fory_and_serde_json_roundtri
             require_set_ai_thread: false,
         },
         traceparent: None,
+        sccache_mode: SccacheMode::default(),
     };
 
     // Apache Fory binary roundtrip for Mode A
@@ -849,6 +858,7 @@ fn test_stage_dispatch_task_declarative_3tier_modes_fory_and_serde_json_roundtri
                 max_pids: 512,
                 require_set_ai_thread: true,
             },
+            sccache_mode: SccacheMode::Mandatory,
         }],
         sandbox_constraints: SandboxConstraintSpec {
             profile_name: "node-ceiling-hypervisor".to_string(),
@@ -865,6 +875,7 @@ fn test_stage_dispatch_task_declarative_3tier_modes_fory_and_serde_json_roundtri
             require_set_ai_thread: true,
         },
         traceparent: None,
+        sccache_mode: SccacheMode::default(),
     };
 
     // Apache Fory binary roundtrip for Mode B
@@ -918,6 +929,7 @@ fn test_stage_dispatch_task_legacy_fallback_fory_and_serde_json_roundtrip() {
         tasks: vec![],
         sandbox_constraints: SandboxConstraintSpec::default(),
         traceparent: None,
+        sccache_mode: SccacheMode::default(),
     };
 
     assert!(
@@ -1125,6 +1137,7 @@ async fn test_traceparent_propagation_and_backward_compatible_serde_roundtrip() 
         tasks: vec![],
         sandbox_constraints: SandboxConstraintSpec::default(),
         traceparent: tp.clone(),
+        sccache_mode: SccacheMode::default(),
     };
 
     let dispatch_bytes = fory.serialize(&dispatch).expect("serialize dispatch");
@@ -1312,4 +1325,65 @@ async fn test_arrow_test_runs_and_bench_runs_batches_over_duplex() {
     let decoded_benches =
         decode_bench_runs_batch(&recv_bench_payload).expect("decode bench runs batch");
     assert_eq!(decoded_benches, bench_records);
+}
+
+#[test]
+fn test_sccache_mode_serde_and_fory_roundtrip() {
+    let fory = create_fory_runtime().expect("Fory runtime");
+
+    // 1. Verify boolean and string variants deserialize properly
+    let off_bool: SccacheMode = serde_json::from_str("false").expect("parse false");
+    assert_eq!(off_bool, SccacheMode::Off);
+    let off_str: SccacheMode = serde_json::from_str("\"false\"").expect("parse \"false\"");
+    assert_eq!(off_str, SccacheMode::Off);
+    let off_disabled: SccacheMode = serde_json::from_str("\"off\"").expect("parse \"off\"");
+    assert_eq!(off_disabled, SccacheMode::Off);
+
+    let try_bool: SccacheMode = serde_json::from_str("true").expect("parse true");
+    assert_eq!(try_bool, SccacheMode::Try);
+    let try_str: SccacheMode = serde_json::from_str("\"try\"").expect("parse \"try\"");
+    assert_eq!(try_str, SccacheMode::Try);
+    let try_true_str: SccacheMode = serde_json::from_str("\"true\"").expect("parse \"true\"");
+    assert_eq!(try_true_str, SccacheMode::Try);
+
+    let mandatory_str: SccacheMode =
+        serde_json::from_str("\"mandatory\"").expect("parse \"mandatory\"");
+    assert_eq!(mandatory_str, SccacheMode::Mandatory);
+
+    // 2. Verify Fory roundtrip for all three variants inside StageDispatchTask
+    for mode in [SccacheMode::Off, SccacheMode::Try, SccacheMode::Mandatory] {
+        let dispatch = StageDispatchTask {
+            job_id: "job-sccache-test".to_string(),
+            stage_id: "build-stage".to_string(),
+            stage_name: "Build Stage".to_string(),
+            repo_name: "LMA1980/ActionRunner-ipc".to_string(),
+            clone_url: "https://github.com/LMA1980/ActionRunner-ipc.git".to_string(),
+            commit_sha: "1234567890abcdef".to_string(),
+            command: "cargo build".to_string(),
+            working_dir: None,
+            env_vars: vec![],
+            timeout_seconds: 300,
+            threads: 4,
+            toolchain: None,
+            exclusive: false,
+            max_concurrent_per_node: 1,
+            tasks: vec![TypedTaskInvocation {
+                task_id: "t1".to_string(),
+                tool_name: "cargo-build".to_string(),
+                args: vec!["--workspace".to_string()],
+                working_dir: None,
+                env_vars: vec![],
+                sandbox: SandboxConstraintSpec::default(),
+                sccache_mode: mode,
+            }],
+            sandbox_constraints: SandboxConstraintSpec::default(),
+            traceparent: None,
+            sccache_mode: mode,
+        };
+
+        let bytes = fory.serialize(&dispatch).expect("fory serialize");
+        let decoded: StageDispatchTask = fory.deserialize(&bytes).expect("fory deserialize");
+        assert_eq!(decoded.sccache_mode, mode);
+        assert_eq!(decoded.tasks[0].sccache_mode, mode);
+    }
 }

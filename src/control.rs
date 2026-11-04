@@ -16,6 +16,74 @@ pub const FORY_ID_NETWORK_EGRESS_MODE: u32 = 11;
 pub const FORY_ID_SANDBOX_CONSTRAINT_SPEC: u32 = 12;
 pub const FORY_ID_SECURITY_GRANT_DENIED: u32 = 13;
 pub const FORY_ID_TYPED_TASK_INVOCATION: u32 = 14;
+pub const FORY_ID_SCCACHE_MODE: u32 = 15;
+
+#[derive(ForyEnum, Debug, PartialEq, Eq, Clone, Copy, Default)]
+pub enum SccacheMode {
+    Off,
+    #[default]
+    Try,
+    Mandatory,
+}
+
+impl Serialize for SccacheMode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Off => serializer.serialize_str("false"),
+            Self::Try => serializer.serialize_str("try"),
+            Self::Mandatory => serializer.serialize_str("mandatory"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SccacheMode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct SccacheModeVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for SccacheModeVisitor {
+            type Value = SccacheMode;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str(
+                    "a boolean (true/false) or string ('try', 'mandatory', 'true', 'false', 'off')",
+                )
+            }
+
+            fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                if v {
+                    Ok(SccacheMode::Try)
+                } else {
+                    Ok(SccacheMode::Off)
+                }
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match v.trim().to_ascii_lowercase().as_str() {
+                    "false" | "off" | "disabled" | "no" | "0" => Ok(SccacheMode::Off),
+                    "true" | "try" | "auto" | "yes" | "1" => Ok(SccacheMode::Try),
+                    "mandatory" | "required" | "strict" => Ok(SccacheMode::Mandatory),
+                    other => Err(E::custom(format!(
+                        "invalid sccache mode '{other}', expected true, false, try, or mandatory"
+                    ))),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(SccacheModeVisitor)
+    }
+}
 
 #[derive(ForyEnum, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
 pub enum SandboxBackendKind {
@@ -104,7 +172,7 @@ pub struct HostPrivilegeCeilingResponse {
     pub spacemit_ai_thread_available: bool,
 }
 
-#[derive(ForyStruct, Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(ForyStruct, Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 pub struct TypedTaskInvocation {
     pub task_id: String,
     pub tool_name: String,
@@ -112,6 +180,8 @@ pub struct TypedTaskInvocation {
     pub working_dir: Option<String>,
     pub env_vars: Vec<(String, String)>,
     pub sandbox: SandboxConstraintSpec,
+    #[serde(default)]
+    pub sccache_mode: SccacheMode,
 }
 
 #[derive(ForyStruct, Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -154,6 +224,8 @@ pub struct StageDispatchTask {
     pub sandbox_constraints: SandboxConstraintSpec,
     #[serde(default)]
     pub traceparent: Option<String>,
+    #[serde(default)]
+    pub sccache_mode: SccacheMode,
 }
 
 #[derive(ForyStruct, Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
@@ -209,5 +281,6 @@ pub fn create_fory_runtime() -> Result<Fory, IpcError> {
     fory.register::<SandboxConstraintSpec>(FORY_ID_SANDBOX_CONSTRAINT_SPEC)?;
     fory.register::<SecurityGrantDenied>(FORY_ID_SECURITY_GRANT_DENIED)?;
     fory.register::<TypedTaskInvocation>(FORY_ID_TYPED_TASK_INVOCATION)?;
+    fory.register::<SccacheMode>(FORY_ID_SCCACHE_MODE)?;
     Ok(fory)
 }
