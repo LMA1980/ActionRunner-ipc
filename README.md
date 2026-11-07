@@ -20,8 +20,18 @@ High-performance, zero-copy inter-process communication (IPC) and distributed fa
 ## Core Capabilities
 
 - **Wire Protocol Framing (`zerocopy`)**: Aligned 24-byte C-representation header (`IpcHeader`) with zero-copy buffer slicing via `zerocopy::FromBytes` and `IntoBytes`.
-- **Control Plane Contracts (`Apache Fory`)**: High-speed, compile-time derived binary serialization for worker registrations, heartbeat telemetry, stage dispatch tasks, and completion reports.
+- **Control Plane Contracts (`Apache Fory`)**: High-speed, compile-time derived binary serialization for worker registrations, heartbeat telemetry, stage dispatch tasks (`StageDispatchTask`, `TypedTaskInvocation`), sandbox constraints (`SandboxConstraintSpec`), and shared compiler cache policies (`SccacheMode`, `FORY_ID_SCCACHE_MODE = 15`).
 - **Data Plane Streaming (`Apache Arrow`)**: Columnar streaming for build output logs and factory pipeline metrics (`coverage`, `benchmarks`, `pass-ratios`) via Arrow IPC `StreamWriter` and `StreamReader`.
+
+## `SccacheMode` Wire Policy (`FORY_ID_SCCACHE_MODE = 15`)
+
+`StageDispatchTask` and `TypedTaskInvocation` carry `sccache_mode: SccacheMode` across the controller-worker tunnel:
+
+| Variant | Accepted YAML / JSON Literals | Semantics |
+| :--- | :--- | :--- |
+| `SccacheMode::Try` *(default)* | `true`, `"try"`, `"auto"`, `"yes"`, `"1"` | Use `sccache` for eligible compiler tools when installed and healthy on the worker; fall back cleanly to uncached `rustc` if unavailable. |
+| `SccacheMode::Mandatory` | `"mandatory"`, `"required"`, `"strict"` | Require `sccache`; controller routes compiler stages to `"sccache"`-tagged workers and worker fails closed (`exit 126`) if `sccache` is missing or unhealthy. |
+| `SccacheMode::Off` | `false`, `"off"`, `"disabled"`, `"no"`, `"0"` | Disable `sccache` and strip `RUSTC_WRAPPER` / `CARGO_BUILD_RUSTC_WRAPPER` for the stage or task. |
 
 ## Protocol Layout
 
