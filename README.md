@@ -1,21 +1,21 @@
-# ActionRunner-ipc
+# mu-ci-ipc
 
 <p align="center">
   <a href="https://hook.lma1980.duckdns.org/jobs">
-    <img src="https://hook.lma1980.duckdns.org/cards/LMA1980/ActionRunner-ipc/card.svg" alt="ActionRunner-ipc Factory Scorecard" width="520"/>
+    <img src="https://hook.lma1980.duckdns.org/cards/LMA1980/mu-ci-ipc/card.svg" alt="mu-ci-ipc Factory Scorecard" width="520"/>
   </a>
 </p>
 
 <p align="center">
-  <a href="https://hook.lma1980.duckdns.org/jobs"><img src="https://hook.lma1980.duckdns.org/badges/LMA1980/ActionRunner-ipc/status.svg" alt="CI Status"/></a>
-  <a href="https://hook.lma1980.duckdns.org/jobs"><img src="https://hook.lma1980.duckdns.org/badges/LMA1980/ActionRunner-ipc/score.svg" alt="Quality Score"/></a>
-  <a href="https://hook.lma1980.duckdns.org/jobs"><img src="https://hook.lma1980.duckdns.org/badges/LMA1980/ActionRunner-ipc/coverage.svg" alt="Coverage"/></a>
-  <a href="https://hook.lma1980.duckdns.org/jobs"><img src="https://hook.lma1980.duckdns.org/badges/LMA1980/ActionRunner-ipc/benchmark.svg" alt="Benchmark"/></a>
+  <a href="https://hook.lma1980.duckdns.org/jobs"><img src="https://hook.lma1980.duckdns.org/badges/LMA1980/mu-ci-ipc/status.svg" alt="CI Status"/></a>
+  <a href="https://hook.lma1980.duckdns.org/jobs"><img src="https://hook.lma1980.duckdns.org/badges/LMA1980/mu-ci-ipc/score.svg" alt="Quality Score"/></a>
+  <a href="https://hook.lma1980.duckdns.org/jobs"><img src="https://hook.lma1980.duckdns.org/badges/LMA1980/mu-ci-ipc/coverage.svg" alt="Coverage"/></a>
+  <a href="https://hook.lma1980.duckdns.org/jobs"><img src="https://hook.lma1980.duckdns.org/badges/LMA1980/mu-ci-ipc/benchmark.svg" alt="Benchmark"/></a>
 </p>
 
 ---
 
-High-performance, zero-copy inter-process communication (IPC) and distributed fabric protocol crate for the **ActionRunner** ecosystem.
+High-performance, zero-copy inter-process communication (IPC) and distributed fabric protocol crate for the **MuCI** ecosystem.
 
 ## Core Capabilities
 
