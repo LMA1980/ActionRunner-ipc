@@ -1,4 +1,4 @@
-use action_runner_ipc::{
+use mu_ci_ipc::{
     bench_runs_schema, create_fory_runtime, decode_bench_runs_batch, decode_log_batch,
     decode_metric_batch, decode_test_runs_batch, encode_bench_runs_batch, encode_log_batch,
     encode_metric_batch, encode_test_runs_batch, read_frame, test_runs_schema, write_frame,
@@ -288,7 +288,7 @@ async fn test_stage_started_transmission_over_duplex() {
     let (mut client, mut server) = duplex(4096);
     let fory = create_fory_runtime().expect("Fory runtime");
 
-    let started = action_runner_ipc::StageStarted {
+    let started = mu_ci_ipc::StageStarted {
         job_id: "job-100".to_string(),
         stage_id: "miri-check".to_string(),
         node_id: "worker-riscv64".to_string(),
@@ -299,7 +299,7 @@ async fn test_stage_started_transmission_over_duplex() {
 
     let serialized_payload = fory.serialize(&started).expect("Serialization");
     let header = IpcHeader::new(
-        action_runner_ipc::MSG_TYPE_STAGE_STARTED,
+        mu_ci_ipc::MSG_TYPE_STAGE_STARTED,
         serialized_payload.len() as u32,
         0,
         100,
@@ -312,7 +312,7 @@ async fn test_stage_started_transmission_over_duplex() {
     let (received_hdr, received_payload) = read_frame(&mut server).await.expect("read frame");
     assert_eq!(received_hdr, header);
 
-    let decoded_started: action_runner_ipc::StageStarted = fory
+    let decoded_started: mu_ci_ipc::StageStarted = fory
         .deserialize(&received_payload)
         .expect("Deserialization");
     assert_eq!(decoded_started, started);
@@ -1123,8 +1123,8 @@ async fn test_traceparent_propagation_and_backward_compatible_serde_roundtrip() 
         job_id: "job-otel-01".to_string(),
         stage_id: "test-stage".to_string(),
         stage_name: "Cargo Test".to_string(),
-        repo_name: "LMA1980/ActionRunner-ipc".to_string(),
-        clone_url: "https://github.com/LMA1980/ActionRunner-ipc.git".to_string(),
+        repo_name: "LMA1980/mu-ci-ipc".to_string(),
+        clone_url: "https://github.com/LMA1980/mu-ci-ipc.git".to_string(),
         commit_sha: "1122334455667788".to_string(),
         command: String::new(),
         working_dir: None,
@@ -1157,8 +1157,8 @@ async fn test_traceparent_propagation_and_backward_compatible_serde_roundtrip() 
         "job_id": "job-legacy",
         "stage_id": "s1",
         "stage_name": "Stage 1",
-        "repo_name": "LMA1980/ActionRunner-ipc",
-        "clone_url": "https://github.com/LMA1980/ActionRunner-ipc.git",
+        "repo_name": "LMA1980/mu-ci-ipc",
+        "clone_url": "https://github.com/LMA1980/mu-ci-ipc.git",
         "commit_sha": "deadbeef",
         "command": "cargo test",
         "working_dir": null,
@@ -1356,8 +1356,8 @@ fn test_sccache_mode_serde_and_fory_roundtrip() {
             job_id: "job-sccache-test".to_string(),
             stage_id: "build-stage".to_string(),
             stage_name: "Build Stage".to_string(),
-            repo_name: "LMA1980/ActionRunner-ipc".to_string(),
-            clone_url: "https://github.com/LMA1980/ActionRunner-ipc.git".to_string(),
+            repo_name: "LMA1980/mu-ci-ipc".to_string(),
+            clone_url: "https://github.com/LMA1980/mu-ci-ipc.git".to_string(),
             commit_sha: "1234567890abcdef".to_string(),
             command: "cargo build".to_string(),
             working_dir: None,

@@ -1,11 +1,11 @@
 ---
-name: action-runner-ipc-protocol
-description: "Implement zero-copy IPC framing, Apache Fory control messages, and Apache Arrow streaming batches with action-runner-ipc. Use when working on ActionRunner controller-worker communication."
+name: mu-ci-ipc
+description: "Implement zero-copy IPC framing, Apache Fory control messages, and Apache Arrow streaming batches with mu-ci-ipc. Use when working on MuCI controller-worker communication."
 ---
 
-# `action-runner-ipc` Zero-Copy Wire Protocol
+# `mu-ci-ipc` Zero-Copy Wire Protocol
 
-Use these guidelines when modifying or consuming `action-runner-ipc` between `action-runner-controller` and `action-runner` workers:
+Use these guidelines when modifying or consuming `mu-ci-ipc` between `mu-ci-controller` and `mu-ci` workers:
 
 ## 1. Hybrid Wire Architecture
 
