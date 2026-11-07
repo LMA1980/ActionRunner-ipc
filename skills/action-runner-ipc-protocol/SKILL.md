@@ -19,3 +19,8 @@ Use these guidelines when modifying or consuming `action-runner-ipc` between `ac
 ## 2. Single-Slot Worker Concurrency Invariant
 
 - Worker capability advertisements and stage assignment frames enforce `max_slots = 1` (at most one active CI stage process per worker node at a time), while bounding intra-stage parallelism via thread budget environment variables (`CARGO_BUILD_JOBS`, `RAYON_NUM_THREADS`, `RUST_TEST_THREADS`).
+
+## 3. Shared Compiler Cache Policy (`SccacheMode`)
+
+- `SccacheMode` (`Off`, `Try` [default], `Mandatory`) is registered in Apache Fory under `FORY_ID_SCCACHE_MODE = 15` and carried on both `StageDispatchTask` and `TypedTaskInvocation`.
+- Custom `serde` deserialization accepts booleans (`true` -> `Try`, `false` -> `Off`) and case-insensitive strings (`"try"`, `"mandatory"`, `"off"`).
