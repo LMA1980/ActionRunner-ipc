@@ -1,6 +1,6 @@
 [package]
 name = "mu-ci-ipc"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "High-performance zero-copy IPC protocol library for MuCI using zerocopy, Apache Fory, and Apache Arrow"
 license = "LGPL-3.0-only WITH LGPL-3.0-linking-exception"
