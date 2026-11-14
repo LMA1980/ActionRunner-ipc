@@ -184,7 +184,8 @@ pub struct TypedTaskInvocation {
     pub sccache_mode: SccacheMode,
 }
 
-#[derive(ForyStruct, Serialize, Deserialize, Debug, PartialEq, Clone)]
+/// Registration payload sent by a worker node upon connecting to the controller.
+#[derive(ForyStruct, Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 pub struct WorkerRegistration {
     pub node_id: String,
     pub arch: String,
@@ -193,6 +194,12 @@ pub struct WorkerRegistration {
     pub ram_total_mb: u64,
     pub btrfs_enabled: bool,
     pub toolchains: Vec<String>,
+    /// Active Rust compiler semver string reported by the worker (for example, `"1.86.0"`).
+    ///
+    /// Uses `#[serde(default)]` and compatible Fory schema evolution so older workers
+    /// without toolchain semver reporting continue to register as `None`.
+    #[serde(default)]
+    pub rust_semver: Option<String>,
 }
 
 #[derive(ForyStruct, Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -283,4 +290,130 @@ pub fn create_fory_runtime() -> Result<Fory, IpcError> {
     fory.register::<TypedTaskInvocation>(FORY_ID_TYPED_TASK_INVOCATION)?;
     fory.register::<SccacheMode>(FORY_ID_SCCACHE_MODE)?;
     Ok(fory)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(ForyStruct, Debug, PartialEq, Clone)]
+    struct LegacyWorkerRegistration {
+        node_id: String,
+        arch: String,
+        tags: Vec<String>,
+        max_slots: u32,
+        ram_total_mb: u64,
+        btrfs_enabled: bool,
+        toolchains: Vec<String>,
+    }
+
+    fn sample_registration(rust_semver: Option<&str>) -> WorkerRegistration {
+        WorkerRegistration {
+            node_id: "worker-riscv64".to_string(),
+            arch: "riscv64".to_string(),
+            tags: vec!["riscv64".to_string(), "test".to_string()],
+            max_slots: 1,
+            ram_total_mb: 32768,
+            btrfs_enabled: true,
+            toolchains: vec!["stable".to_string(), "nightly".to_string()],
+            rust_semver: rust_semver.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn worker_registration_fory_and_json_roundtrip() {
+        let fory = create_fory_runtime().expect("Fory runtime");
+        for semver in [Some("1.86.0"), Some("1.88.0-nightly"), None] {
+            let reg = sample_registration(semver);
+
+            let fory_bytes = fory.serialize(&reg).expect("Fory serialize");
+            let fory_decoded: WorkerRegistration =
+                fory.deserialize(&fory_bytes).expect("Fory deserialize");
+            assert_eq!(reg, fory_decoded);
+
+            let json = serde_json::to_string(&reg).expect("JSON serialize");
+            let json_decoded: WorkerRegistration =
+                serde_json::from_str(&json).expect("JSON deserialize");
+            assert_eq!(reg, json_decoded);
+        }
+    }
+
+    #[test]
+    fn worker_registration_json_omitted_rust_semver_defaults_to_none() {
+        let legacy_json = r#"{
+            "node_id": "node-a",
+            "arch": "x86_64",
+            "tags": ["x86_64", "clippy"],
+            "max_slots": 1,
+            "ram_total_mb": 16384,
+            "btrfs_enabled": false,
+            "toolchains": ["stable"]
+        }"#;
+
+        let decoded: WorkerRegistration =
+            serde_json::from_str(legacy_json).expect("legacy JSON must deserialize");
+        assert_eq!(decoded.node_id, "node-a");
+        assert_eq!(decoded.arch, "x86_64");
+        assert_eq!(decoded.tags, vec!["x86_64", "clippy"]);
+        assert_eq!(decoded.max_slots, 1);
+        assert_eq!(decoded.ram_total_mb, 16384);
+        assert!(!decoded.btrfs_enabled);
+        assert_eq!(decoded.toolchains, vec!["stable"]);
+        assert_eq!(decoded.rust_semver, None);
+
+        let default_reg = WorkerRegistration::default();
+        assert_eq!(default_reg.rust_semver, None);
+    }
+
+    #[test]
+    fn worker_registration_fory_schema_evolution_compat() {
+        let mut legacy_fory = Fory::builder().xlang(false).build();
+        legacy_fory
+            .register::<LegacyWorkerRegistration>(FORY_ID_REGISTRATION)
+            .expect("register legacy WorkerRegistration");
+
+        let modern_fory = create_fory_runtime().expect("Fory runtime");
+
+        let legacy_reg = LegacyWorkerRegistration {
+            node_id: "node-a".to_string(),
+            arch: "x86_64".to_string(),
+            tags: vec!["x86_64".to_string()],
+            max_slots: 1,
+            ram_total_mb: 32768,
+            btrfs_enabled: true,
+            toolchains: vec!["system".to_string()],
+        };
+
+        // Old worker -> new controller: missing rust_semver defaults to None
+        let legacy_bytes = legacy_fory
+            .serialize(&legacy_reg)
+            .expect("serialize legacy registration");
+        let upgraded: WorkerRegistration = modern_fory
+            .deserialize(&legacy_bytes)
+            .expect("new controller must deserialize legacy registration");
+        assert_eq!(upgraded.node_id, legacy_reg.node_id);
+        assert_eq!(upgraded.arch, legacy_reg.arch);
+        assert_eq!(upgraded.tags, legacy_reg.tags);
+        assert_eq!(upgraded.max_slots, legacy_reg.max_slots);
+        assert_eq!(upgraded.ram_total_mb, legacy_reg.ram_total_mb);
+        assert_eq!(upgraded.btrfs_enabled, legacy_reg.btrfs_enabled);
+        assert_eq!(upgraded.toolchains, legacy_reg.toolchains);
+        assert_eq!(upgraded.rust_semver, None);
+
+        // New worker -> old controller: unknown rust_semver is skipped safely
+        let modern_reg = sample_registration(Some("1.86.0"));
+        let modern_bytes = modern_fory
+            .serialize(&modern_reg)
+            .expect("serialize modern registration");
+        let downgraded: LegacyWorkerRegistration = legacy_fory
+            .deserialize(&modern_bytes)
+            .expect("old controller must deserialize modern registration");
+        assert_eq!(downgraded.node_id, modern_reg.node_id);
+        assert_eq!(downgraded.arch, modern_reg.arch);
+        assert_eq!(downgraded.tags, modern_reg.tags);
+        assert_eq!(downgraded.max_slots, modern_reg.max_slots);
+        assert_eq!(downgraded.ram_total_mb, modern_reg.ram_total_mb);
+        assert_eq!(downgraded.btrfs_enabled, modern_reg.btrfs_enabled);
+        assert_eq!(downgraded.toolchains, modern_reg.toolchains);
+    }
 }
