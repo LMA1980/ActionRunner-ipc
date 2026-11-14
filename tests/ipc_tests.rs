@@ -47,6 +47,7 @@ async fn test_fory_control_transmission_over_duplex() {
             "llvm-24".to_string(),
             "gcc-17".to_string(),
         ],
+        rust_semver: Some("1.86.0".to_string()),
     };
 
     let serialized_payload = fory.serialize(&reg).expect("Serialization");
@@ -1386,4 +1387,113 @@ fn test_sccache_mode_serde_and_fory_roundtrip() {
         assert_eq!(decoded.sccache_mode, mode);
         assert_eq!(decoded.tasks[0].sccache_mode, mode);
     }
+}
+
+#[tokio::test]
+async fn test_worker_registration_rust_semver_control_frame_and_backward_compat() {
+    #[derive(fory::ForyStruct, Debug, PartialEq, Clone)]
+    struct LegacyWorkerRegistration {
+        node_id: String,
+        arch: String,
+        tags: Vec<String>,
+        max_slots: u32,
+        ram_total_mb: u64,
+        btrfs_enabled: bool,
+        toolchains: Vec<String>,
+    }
+
+    let (mut client, mut server) = duplex(8192);
+    let fory = create_fory_runtime().expect("Fory runtime");
+
+    for (seq, semver) in [
+        (701u64, Some("1.86.0".to_string())),
+        (702u64, Some("1.88.0-nightly".to_string())),
+        (703u64, None),
+    ] {
+        let reg = WorkerRegistration {
+            node_id: "worker-riscv64".to_string(),
+            arch: "riscv64".to_string(),
+            tags: vec!["riscv64".to_string(), "test".to_string()],
+            max_slots: 1,
+            ram_total_mb: 32768,
+            btrfs_enabled: true,
+            toolchains: vec!["stable".to_string(), "nightly".to_string()],
+            rust_semver: semver.clone(),
+        };
+
+        // JSON round-trip
+        let json = serde_json::to_string(&reg).expect("serde_json serialize WorkerRegistration");
+        let json_decoded: WorkerRegistration =
+            serde_json::from_str(&json).expect("serde_json deserialize WorkerRegistration");
+        assert_eq!(json_decoded, reg);
+        assert_eq!(json_decoded.rust_semver, semver);
+
+        // Control frame + Fory round-trip over duplex
+        let payload = fory
+            .serialize(&reg)
+            .expect("fory serialize WorkerRegistration");
+        let hdr = IpcHeader::new(MSG_TYPE_WORKER_REGISTRATION, payload.len() as u32, 0, seq);
+        write_frame(&mut client, &hdr, &payload)
+            .await
+            .expect("write WorkerRegistration frame");
+        let (recv_hdr, recv_payload) = read_frame(&mut server)
+            .await
+            .expect("read WorkerRegistration frame");
+        assert_eq!(recv_hdr, hdr);
+        let frame_decoded: WorkerRegistration = fory
+            .deserialize(&recv_payload)
+            .expect("fory deserialize WorkerRegistration frame");
+        assert_eq!(frame_decoded, reg);
+        assert_eq!(frame_decoded.rust_semver, semver);
+    }
+
+    // Legacy JSON without rust_semver field defaults cleanly to None
+    let legacy_json = r#"{
+        "node_id": "node-a",
+        "arch": "x86_64",
+        "tags": ["x86_64", "clippy"],
+        "max_slots": 1,
+        "ram_total_mb": 16384,
+        "btrfs_enabled": false,
+        "toolchains": ["stable"]
+    }"#;
+    let parsed_legacy: WorkerRegistration =
+        serde_json::from_str(legacy_json).expect("legacy JSON without rust_semver must parse");
+    assert_eq!(parsed_legacy.rust_semver, None);
+
+    // Legacy Fory frame without rust_semver decodes cleanly on modern controller
+    let mut legacy_fory = fory::Fory::builder().xlang(false).build();
+    legacy_fory
+        .register::<LegacyWorkerRegistration>(mu_ci_ipc::FORY_ID_REGISTRATION)
+        .expect("register legacy WorkerRegistration");
+
+    let legacy_reg = LegacyWorkerRegistration {
+        node_id: "node-a".to_string(),
+        arch: "x86_64".to_string(),
+        tags: vec!["x86_64".to_string()],
+        max_slots: 1,
+        ram_total_mb: 16384,
+        btrfs_enabled: false,
+        toolchains: vec!["stable".to_string()],
+    };
+    let legacy_payload = legacy_fory
+        .serialize(&legacy_reg)
+        .expect("serialize legacy WorkerRegistration");
+    let legacy_hdr = IpcHeader::new(
+        MSG_TYPE_WORKER_REGISTRATION,
+        legacy_payload.len() as u32,
+        0,
+        704,
+    );
+    write_frame(&mut client, &legacy_hdr, &legacy_payload)
+        .await
+        .expect("write legacy frame");
+    let (recv_legacy_hdr, recv_legacy_payload) =
+        read_frame(&mut server).await.expect("read legacy frame");
+    assert_eq!(recv_legacy_hdr, legacy_hdr);
+    let upgraded_reg: WorkerRegistration = fory
+        .deserialize(&recv_legacy_payload)
+        .expect("modern controller must decode legacy WorkerRegistration frame");
+    assert_eq!(upgraded_reg.node_id, "node-a");
+    assert_eq!(upgraded_reg.rust_semver, None);
 }
